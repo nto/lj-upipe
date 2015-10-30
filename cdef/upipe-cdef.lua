@@ -1,13 +1,83 @@
-local ffi = require "ffi"
+local ffi = require("ffi")
 ffi.cdef [[
+enum ubase_err {
+	UBASE_ERR_NONE,
+	UBASE_ERR_UNKNOWN,
+	UBASE_ERR_ALLOC,
+	UBASE_ERR_NOSPC,
+	UBASE_ERR_UPUMP,
+	UBASE_ERR_UNHANDLED,
+	UBASE_ERR_INVALID,
+	UBASE_ERR_EXTERNAL,
+	UBASE_ERR_BUSY,
+	UBASE_ERR_LOCAL = 32768,
+};
+enum uref_date_type {
+	UREF_DATE_NONE,
+	UREF_DATE_CR,
+	UREF_DATE_DTS,
+	UREF_DATE_PTS,
+};
+enum uprobe_event {
+	UPROBE_LOG,
+	UPROBE_FATAL,
+	UPROBE_ERROR,
+	UPROBE_READY,
+	UPROBE_DEAD,
+	UPROBE_SOURCE_END,
+	UPROBE_SINK_END,
+	UPROBE_NEED_OUTPUT,
+	UPROBE_PROVIDE_REQUEST,
+	UPROBE_NEED_UPUMP_MGR,
+	UPROBE_FREEZE_UPUMP_MGR,
+	UPROBE_THAW_UPUMP_MGR,
+	UPROBE_NEW_FLOW_DEF,
+	UPROBE_NEW_RAP,
+	UPROBE_SPLIT_UPDATE,
+	UPROBE_SYNC_ACQUIRED,
+	UPROBE_SYNC_LOST,
+	UPROBE_CLOCK_REF,
+	UPROBE_CLOCK_TS,
+	UPROBE_CLOCK_UTC,
+	UPROBE_LOCAL = 32768,
+};
+enum upipe_command {
+	UPIPE_ATTACH_UREF_MGR,
+	UPIPE_ATTACH_UPUMP_MGR,
+	UPIPE_ATTACH_UCLOCK,
+	UPIPE_GET_URI,
+	UPIPE_SET_URI,
+	UPIPE_GET_OPTION,
+	UPIPE_SET_OPTION,
+	UPIPE_REGISTER_REQUEST,
+	UPIPE_UNREGISTER_REQUEST,
+	UPIPE_SET_FLOW_DEF,
+	UPIPE_GET_MAX_LENGTH,
+	UPIPE_SET_MAX_LENGTH,
+	UPIPE_FLUSH,
+	UPIPE_GET_OUTPUT,
+	UPIPE_SET_OUTPUT,
+	UPIPE_ATTACH_UBUF_MGR,
+	UPIPE_GET_FLOW_DEF,
+	UPIPE_GET_OUTPUT_SIZE,
+	UPIPE_SET_OUTPUT_SIZE,
+	UPIPE_SPLIT_ITERATE,
+	UPIPE_GET_SUB_MGR,
+	UPIPE_ITERATE_SUB,
+	UPIPE_SUB_GET_SUPER,
+	UPIPE_SRC_GET_SIZE,
+	UPIPE_SRC_GET_POSITION,
+	UPIPE_SRC_SET_POSITION,
+	UPIPE_SRC_SET_RANGE,
+	UPIPE_SRC_GET_RANGE,
+	UPIPE_CONTROL_LOCAL = 32768,
+};
 typedef uint32_t volatile uatomic_uint32_t;
 typedef void (*urefcount_cb)(struct urefcount *);
 struct urefcount {
 	uatomic_uint32_t refcount;
 	urefcount_cb cb;
 };
-typedef long int __time_t;
-typedef __time_t time_t;
 struct uclock {
 	struct urefcount *refcount;
 	uint64_t (*uclock_now)(struct uclock *);
@@ -120,10 +190,10 @@ int ubuf_pic_common_resize(struct ubuf *, int, int, int, int);
 void ubuf_pic_common_mgr_clean(struct ubuf_mgr *);
 void ubuf_pic_common_mgr_init(struct ubuf_mgr *, uint8_t);
 int ubuf_pic_common_mgr_add_plane(struct ubuf_mgr *, char const *, uint8_t, uint8_t, uint8_t);
-int ubuf_pic_plane_clear(struct ubuf *, char const *, int, int, int, int);
-int ubuf_pic_clear(struct ubuf *, int, int, int, int);
-struct ubuf_mgr *ubuf_pic_mem_mgr_alloc(uint16_t, uint16_t, struct umem_mgr *, uint8_t, int, int, int, int, int, int);
+int ubuf_pic_plane_clear(struct ubuf *, char const *, int, int, int, int, int);
+int ubuf_pic_clear(struct ubuf *, int, int, int, int, int);
 int ubuf_pic_mem_mgr_add_plane(struct ubuf_mgr *, char const *, uint8_t, uint8_t, uint8_t);
+struct ubuf_mgr *ubuf_pic_mem_mgr_alloc(uint16_t, uint16_t, struct umem_mgr *, uint8_t, int, int, int, int, int, int);
 struct ubuf_mgr *ubuf_pic_mem_mgr_alloc_fourcc(uint16_t, uint16_t, struct umem_mgr *, char const *, int, int, int, int, int, int);
 int ubuf_sound_common_dup(struct ubuf *, struct ubuf *);
 int ubuf_sound_common_plane_dup(struct ubuf *, struct ubuf *, uint8_t);
@@ -138,6 +208,26 @@ struct ubuf_mgr *ubuf_sound_mem_mgr_alloc(uint16_t, uint16_t, struct umem_mgr *,
 int ubuf_sound_mem_mgr_add_plane(struct ubuf_mgr *, char const *);
 struct udict_mgr *udict_inline_mgr_alloc(unsigned int, struct umem_mgr *, int, int);
 struct uref_mgr *uref_std_mgr_alloc(uint16_t, struct udict_mgr *, int);
+struct ustring {
+	char *at;
+	size_t len;
+};
+struct uuri_authority {
+	struct ustring userinfo;
+	struct ustring host;
+	struct ustring port;
+};
+struct uuri {
+	struct ustring scheme;
+	struct uuri_authority authority;
+	struct ustring path;
+	struct ustring query;
+	struct ustring fragment;
+};
+int uref_uri_set(struct uref *, struct uuri const *);
+int uref_uri_get(struct uref *, struct uuri *);
+int uref_uri_set_from_str(struct uref *, char const *);
+int uref_uri_get_to_str(struct uref *, char **);
 struct upump;
 struct upipe_mgr {
 	struct urefcount *refcount;
@@ -163,20 +253,27 @@ struct uprobe {
 	uprobe_throw_func uprobe_throw;
 	struct uprobe *next;
 };
-void uprobe_dejitter_set(struct uprobe *, unsigned int);
+void uprobe_dejitter_set(struct uprobe *, bool, uint64_t);
+struct urational {
+	int64_t num;
+	uint64_t den;
+};
 struct uprobe_dejitter {
-	unsigned int divider;
+	unsigned int offset_divider;
+	unsigned int deviation_divider;
 	unsigned int offset_count;
-	int64_t offset;
-	int64_t offset_residue;
+	double offset;
 	unsigned int deviation_count;
-	uint64_t deviation;
-	uint64_t deviation_residue;
+	double deviation;
+	uint64_t last_cr_prog;
+	uint64_t last_cr_sys;
+	struct urational drift_rate;
+	uint64_t last_print;
 	struct uprobe uprobe;
 };
-struct uprobe *uprobe_dejitter_init(struct uprobe_dejitter *, struct uprobe *, unsigned int);
+struct uprobe *uprobe_dejitter_init(struct uprobe_dejitter *, struct uprobe *, bool, uint64_t);
 void uprobe_dejitter_clean(struct uprobe_dejitter *);
-struct uprobe *uprobe_dejitter_alloc(struct uprobe *, unsigned int);
+struct uprobe *uprobe_dejitter_alloc(struct uprobe *, bool, uint64_t);
 enum uprobe_log_level {
 	UPROBE_LOG_VERBOSE,
 	UPROBE_LOG_DEBUG,
@@ -184,6 +281,15 @@ enum uprobe_log_level {
 	UPROBE_LOG_WARNING,
 	UPROBE_LOG_ERROR,
 };
+struct uprobe_loglevel {
+	enum uprobe_log_level min_level;
+	struct uprobe uprobe;
+	struct uchain patterns;
+};
+struct uprobe *uprobe_loglevel_init(struct uprobe_loglevel *, struct uprobe *, enum uprobe_log_level);
+void uprobe_loglevel_clean(struct uprobe_loglevel *);
+struct uprobe *uprobe_loglevel_alloc(struct uprobe *, enum uprobe_log_level);
+int uprobe_loglevel_set(struct uprobe *, char const *, enum uprobe_log_level);
 struct uprobe_pfx {
 	char *name;
 	enum uprobe_log_level min_level;
@@ -199,6 +305,8 @@ struct uprobe_output {
 struct uprobe *uprobe_output_init(struct uprobe_output *, struct uprobe *);
 void uprobe_output_clean(struct uprobe_output *);
 struct uprobe *uprobe_output_alloc(struct uprobe *);
+int uprobe_selflow_set(struct uprobe *, char const *);
+void uprobe_selflow_get(struct uprobe *, char const **);
 enum uprobe_selflow_type {
 	UPROBE_SELFLOW_VOID,
 	UPROBE_SELFLOW_PIC,
@@ -206,10 +314,7 @@ enum uprobe_selflow_type {
 	UPROBE_SELFLOW_SUBPIC,
 };
 struct uprobe *uprobe_selflow_alloc(struct uprobe *, struct uprobe *, enum uprobe_selflow_type, char const *);
-void uprobe_selflow_get(struct uprobe *, char const **);
-int uprobe_selflow_set(struct uprobe *, char const *);
 int uprobe_selflow_set_va(struct uprobe *, char const *, ...);
-typedef struct FILE FILE;
 struct uprobe_stdio {
 	FILE *stream;
 	enum uprobe_log_level min_level;
@@ -228,12 +333,14 @@ void uprobe_stdio_color_clean(struct uprobe_stdio_color *);
 struct uprobe *uprobe_stdio_color_alloc(struct uprobe *, FILE *, enum uprobe_log_level);
 struct uprobe_syslog {
 	char *ident;
+	int facility;
+	bool inited;
 	enum uprobe_log_level min_level;
 	struct uprobe uprobe;
 };
-struct uprobe *uprobe_syslog_init(struct uprobe_syslog *, struct uprobe *, char *, int, int, enum uprobe_log_level);
+struct uprobe *uprobe_syslog_init(struct uprobe_syslog *, struct uprobe *, char const *, int, int, enum uprobe_log_level);
 void uprobe_syslog_clean(struct uprobe_syslog *);
-struct uprobe *uprobe_syslog_alloc(struct uprobe *, char *, int, int, enum uprobe_log_level);
+struct uprobe *uprobe_syslog_alloc(struct uprobe *, char const *, int, int, enum uprobe_log_level);
 struct uprobe_xfer {
 	struct uchain subs;
 	struct uprobe uprobe;
@@ -315,22 +422,78 @@ struct uprobe *uprobe_uref_mgr_init(struct uprobe_uref_mgr *, struct uprobe *, s
 void uprobe_uref_mgr_clean(struct uprobe_uref_mgr *);
 struct uprobe *uprobe_uref_mgr_alloc(struct uprobe *, struct uref_mgr *);
 void uprobe_uref_mgr_set(struct uprobe *, struct uref_mgr *);
-struct upump_blocker *upump_common_blocker_alloc(struct upump *);
-void upump_common_blocker_free(struct upump_blocker *);
-void upump_common_blocker_free_inner(struct upool *, void *);
-void upump_common_init(struct upump *);
-void upump_common_dispatch(struct upump *);
 void upump_common_start(struct upump *);
 void upump_common_stop(struct upump *);
+void upump_common_blocker_free_inner(struct upool *, void *);
+void upump_common_blocker_free(struct upump_blocker *);
+struct upump_blocker *upump_common_blocker_alloc(struct upump *);
+void upump_common_init(struct upump *);
+void upump_common_dispatch(struct upump *);
 void upump_common_clean(struct upump *);
 size_t upump_common_mgr_sizeof(uint16_t, uint16_t);
 void upump_common_mgr_vacuum(struct upump_mgr *);
 void upump_common_mgr_clean(struct upump_mgr *);
 void upump_common_mgr_init(struct upump_mgr *, uint16_t, uint16_t, void *, void (*)(struct upump *), void (*)(struct upump *), void *(*)(struct upool *), void (*)(struct upool *, void *));
+ssize_t uuri_escape(char const *, char *, size_t);
+ssize_t uuri_unescape(char const *, char *, size_t);
+struct ustring uuri_parse_ipv4(struct ustring *);
+struct ustring uuri_parse_ipv6(struct ustring *);
+struct ustring uuri_parse_ipv6_scoped(struct ustring *);
+struct ustring uuri_parse_ipvfuture(struct ustring *);
+struct ustring uuri_parse_scheme(struct ustring *);
+struct ustring uuri_parse_userinfo(struct ustring *);
+struct ustring uuri_parse_host(struct ustring *);
+struct ustring uuri_parse_port(struct ustring *);
+struct uuri_authority uuri_parse_authority(struct ustring *);
+struct ustring uuri_parse_path(struct ustring *);
+struct ustring uuri_parse_query(struct ustring *);
+struct ustring uuri_parse_fragment(struct ustring *);
+struct uuri uuri_parse(struct ustring *);
+int uuri_authority_len(struct uuri_authority const *, size_t *);
+int uuri_len(struct uuri const *, size_t *);
+int uuri_authority_to_buffer(struct uuri_authority const *, char *, size_t);
+int uuri_to_buffer(struct uuri *, char *, size_t);
+int uuri_to_str(struct uuri *, char **);
+struct ucookie {
+	struct ustring name;
+	struct ustring value;
+	struct ustring expires;
+	struct ustring max_age;
+	struct ustring domain;
+	struct ustring path;
+	bool secure;
+	bool http_only;
+};
+int ucookie_from_str(struct ucookie *, char const *);
 void urefcount_release(struct urefcount *);
 bool urefcount_single(struct urefcount *);
 bool urefcount_dead(struct urefcount *);
 int ubuf_block_check_size(struct ubuf *, int *, int *);
+struct uring_elem *uring_elem_from_index(struct uring *, uring_index);
+typedef uint32_t uring_lifo_val;
+uring_index uring_lifo_to_index(struct uring *, uring_lifo_val);
+uring_lifo_val uring_lifo_from_index(struct uring *, uring_index);
+typedef uint32_t uring_fifo_val;
+void uring_fifo_set_head(struct uring *, uring_fifo_val *, uring_index);
+uring_index uring_fifo_get_tail(struct uring *, uring_fifo_val);
+uring_index uring_fifo_get_head(struct uring *, uring_fifo_val);
+uring_lifo_val uring_init(struct uring *, uint16_t, void *);
+enum ueventfd_mode {
+	UEVENTFD_MODE_EVENTFD,
+	UEVENTFD_MODE_PIPE,
+};
+struct ueventfd {
+	enum ueventfd_mode mode;
+	union {
+		int event_fd;
+		int pipe_fds[2];
+	};
+};
+typedef void (*upump_cb)(struct upump *);
+struct upump *ueventfd_upump_alloc(struct ueventfd *, struct upump_mgr *, upump_cb, void *);
+bool ueventfd_read(struct ueventfd *);
+bool ueventfd_write(struct ueventfd *);
+void ueventfd_clean(struct ueventfd *);
 enum udict_type {
 	UDICT_TYPE_END,
 	UDICT_TYPE_OPAQUE,
@@ -352,6 +515,7 @@ enum udict_type {
 	UDICT_TYPE_FLOW_LANGUAGES,
 	UDICT_TYPE_EVENT_EVENTS,
 	UDICT_TYPE_CLOCK_DURATION,
+	UDICT_TYPE_CLOCK_RATE,
 	UDICT_TYPE_CLOCK_LATENCY,
 	UDICT_TYPE_BLOCK_END,
 	UDICT_TYPE_PIC_NUM,
@@ -373,21 +537,25 @@ enum udict_type {
 	UDICT_TYPE_PIC_TF,
 	UDICT_TYPE_PIC_BF,
 	UDICT_TYPE_PIC_TFF,
+	UDICT_TYPE_PIC_AFD,
+	UDICT_TYPE_PIC_CEA_708,
 };
 int udict_get_string(struct udict *, char const **, enum udict_type, char const *);
 int udict_get_bool(struct udict *, bool *, enum udict_type, char const *);
 int udict_get_small_unsigned(struct udict *, uint8_t *, enum udict_type, char const *);
 int udict_get_small_int(struct udict *, int8_t *, enum udict_type, char const *);
-int64_t udict_get_int64(uint8_t const *);
 int udict_get_unsigned(struct udict *, uint64_t *, enum udict_type, char const *);
 int udict_get_int(struct udict *, int64_t *, enum udict_type, char const *);
 int udict_get_float(struct udict *, double *, enum udict_type, char const *);
-struct urational {
-	int64_t num;
-	uint64_t den;
-};
 int udict_get_rational(struct udict *, struct urational *, enum udict_type, char const *);
 void udict_set_int64(uint8_t *, int64_t);
+typedef uatomic_uint32_t uring_fifo;
+struct ufifo {
+	struct uring uring;
+	uring_fifo fifo_carrier;
+	uring_lifo lifo_empty;
+};
+bool ufifo_push(struct ufifo *, void *);
 typedef int (*urequest_func)(struct urequest *, va_list);
 typedef void (*urequest_free_func)(struct urequest *);
 struct urequest {
@@ -400,10 +568,31 @@ struct urequest {
 };
 void urequest_init(struct urequest *, int, struct uref *, urequest_func, urequest_free_func);
 int upipe_control_nodbg_va(struct upipe *, int, va_list);
+void uchain_init(struct uchain *);
 char const *ubase_err_str(int);
 bool ubase_check(int);
 uint64_t ubase_gcd(uint64_t, uint64_t);
+void urational_simplify(struct urational *);
+struct urational urational_add(struct urational const *, struct urational const *);
+struct urational urational_multiply(struct urational const *, struct urational const *);
+struct urational urational_divide(struct urational const *, struct urational const *);
 int ubase_ncmp(char const *, char const *);
+void ubase_clean_ptr(void **);
+void ubase_clean_str(char **);
+void ubase_clean_data(uint8_t **);
+void ubase_clean_fd(int *);
+void uatomic_init(uatomic_uint32_t *, uint32_t);
+void uatomic_store(uatomic_uint32_t *, uint32_t);
+uint32_t uatomic_load(uatomic_uint32_t *);
+bool uatomic_compare_exchange(uatomic_uint32_t *, uint32_t *, uint32_t);
+void uatomic_clean(uatomic_uint32_t *);
+void uatomic_ptr_init(uatomic_ptr_t *, void *);
+void uatomic_ptr_store(uatomic_ptr_t *, void *);
+void *uatomic_ptr_load(uatomic_ptr_t *);
+bool uatomic_ptr_compare_exchange(uatomic_ptr_t *, void **, void *);
+void uatomic_ptr_clean(uatomic_ptr_t *);
+uint32_t uatomic_fetch_add(uatomic_uint32_t *, uint32_t);
+uint32_t uatomic_fetch_sub(uatomic_uint32_t *, uint32_t);
 void urefcount_init(struct urefcount *, urefcount_cb);
 void urefcount_reset(struct urefcount *);
 struct urefcount *urefcount_use(struct urefcount *);
@@ -467,6 +656,27 @@ struct ubuf_block_stream {
 int ubuf_block_stream_init(struct ubuf_block_stream *, struct ubuf *, int);
 int ubuf_block_stream_clean(struct ubuf_block_stream *);
 int ubuf_block_stream_get(struct ubuf_block_stream *, uint8_t *);
+void uring_elem_set(struct uring *, uring_index, void *);
+void *uring_elem_get(struct uring *, uring_index);
+void uring_lifo_init(struct uring *, uring_lifo *, uring_lifo_val);
+void uring_lifo_clean(struct uring *, uring_lifo *);
+uring_index uring_lifo_pop(struct uring *, uring_lifo *);
+void uring_lifo_push(struct uring *, uring_lifo *, uring_index);
+void uring_fifo_set_tail(struct uring *, uring_fifo_val *, uring_index);
+uring_index uring_fifo_find(struct uring *, uring_index, uring_index);
+uring_index uring_fifo_pop(struct uring *, uring_fifo *);
+void uring_fifo_push(struct uring *, uring_fifo *, uring_index);
+void uring_fifo_init(struct uring *, uring_fifo *);
+void uring_fifo_clean(struct uring *, uring_fifo *);
+void ulifo_init(struct ulifo *, uint16_t, void *);
+bool ulifo_push(struct ulifo *, void *);
+void *ulifo_pop_internal(struct ulifo *);
+void ulifo_clean(struct ulifo *);
+void upool_init(struct upool *, uint16_t, void *, upool_alloc_cb, upool_free_cb);
+void *upool_alloc_internal(struct upool *);
+void upool_free(struct upool *, void *);
+void upool_vacuum(struct upool *);
+void upool_clean(struct upool *);
 uint8_t *umem_buffer(struct umem *);
 size_t umem_size(struct umem *);
 bool umem_alloc(struct umem_mgr *, struct umem *, size_t);
@@ -500,6 +710,7 @@ int ubuf_pic_plane_write(struct ubuf *, char const *, int, int, int, int, uint8_
 int ubuf_pic_plane_unmap(struct ubuf *, char const *, int, int, int, int);
 int ubuf_pic_check_resize(struct ubuf *, int *, int *, int *, int *, size_t *, size_t *, uint8_t *);
 int ubuf_pic_resize(struct ubuf *, int, int, int, int);
+int ubuf_pic_blit(struct ubuf *, struct ubuf *, int, int, int, int, int, int);
 struct ubuf *ubuf_pic_copy(struct ubuf_mgr *, struct ubuf *, int, int, int, int);
 int ubuf_pic_replace(struct ubuf_mgr *, struct ubuf **, int, int, int, int);
 int ubuf_sound_common_plane(struct ubuf_mgr *, char const *);
@@ -545,7 +756,50 @@ uint64_t uclock_now(struct uclock *);
 time_t uclock_mktime(struct uclock *, uint64_t);
 struct uclock *uclock_use(struct uclock *);
 void uclock_release(struct uclock *);
-typedef void (*upump_cb)(struct upump *);
+struct ustring ustring_null(void);
+struct ustring ustring_from_str(char const *);
+bool ustring_is_null(struct ustring const);
+bool ustring_is_empty(struct ustring const);
+int ustring_to_str(struct ustring const, char **);
+int ustring_cpy(struct ustring const, char *, size_t);
+struct ustring ustring_sub(struct ustring, size_t, size_t);
+struct ustring ustring_shift(struct ustring const, size_t);
+struct ustring ustring_truncate(struct ustring const, size_t);
+struct ustring ustring_while(struct ustring const, char const *);
+struct ustring ustring_until(struct ustring const, char const *);
+struct ustring ustring_shift_while(struct ustring const, char const *);
+struct ustring ustring_shift_until(struct ustring const, char const *);
+int ustring_ncmp(struct ustring const, struct ustring const, size_t);
+int ustring_ncasecmp(struct ustring const, struct ustring const, size_t);
+int ustring_cmp(struct ustring const, struct ustring const);
+int ustring_casecmp(struct ustring const, struct ustring const);
+bool ustring_match(struct ustring const, struct ustring const);
+bool ustring_match_str(struct ustring const, char const *);
+bool ustring_casematch(struct ustring const, struct ustring const);
+bool ustring_match_sfx(struct ustring const, struct ustring const);
+bool ustring_casematch_sfx(struct ustring const, struct ustring const);
+struct ustring ustring_split_while(struct ustring *, char const *);
+struct ustring ustring_split_until(struct ustring *, char const *);
+struct ustring ustring_split_sep(struct ustring *, char const *);
+struct ustring ustring_split_match(struct ustring *, struct ustring const);
+struct ustring ustring_split_match_str(struct ustring *, char const *);
+struct ustring ustring_split_casematch(struct ustring *, struct ustring const);
+struct ustring ustring_split_casematch_str(struct ustring *, char const *);
+struct ucookie ucookie_null(void);
+void ulist_init(struct uchain *);
+bool ulist_is_first(struct uchain *, struct uchain *);
+bool ulist_is_last(struct uchain *, struct uchain *);
+bool ulist_is_in(struct uchain *);
+bool ulist_empty(struct uchain *);
+size_t ulist_depth(struct uchain *);
+void ulist_insert(struct uchain *, struct uchain *, struct uchain *);
+void ulist_delete(struct uchain *);
+void ulist_add(struct uchain *, struct uchain *);
+void ulist_unshift(struct uchain *, struct uchain *);
+struct uchain *ulist_peek(struct uchain *);
+struct uchain *ulist_pop(struct uchain *);
+struct uchain *ulist_at(struct uchain *, unsigned int);
+void ulist_sort(struct uchain *, int (*)(struct uchain **, struct uchain **));
 struct upump *upump_alloc(struct upump_mgr *, upump_cb, void *, enum upump_type, ...);
 struct upump *upump_alloc_idler(struct upump_mgr *, upump_cb, void *);
 struct upump *upump_alloc_timer(struct upump_mgr *, upump_cb, void *, uint64_t, uint64_t);
@@ -561,6 +815,19 @@ void upump_mgr_set_opaque(struct upump_mgr *, void *);
 int upump_mgr_control_va(struct upump_mgr *, int, va_list);
 int upump_mgr_control(struct upump_mgr *, int, ...);
 int upump_mgr_vacuum(struct upump_mgr *);
+bool ueventfd_init(struct ueventfd *, bool);
+struct udeal {
+	uatomic_uint32_t waiters;
+	uatomic_uint32_t access;
+	struct ueventfd event;
+};
+bool udeal_init(struct udeal *);
+struct upump *udeal_upump_alloc(struct udeal *, struct upump_mgr *, upump_cb, void *);
+void udeal_start(struct udeal *, struct upump *);
+bool udeal_grab(struct udeal *);
+void udeal_yield(struct udeal *, struct upump *);
+void udeal_abort(struct udeal *, struct upump *);
+void udeal_clean(struct udeal *);
 struct udict *udict_alloc(struct udict_mgr *, size_t);
 int udict_control_va(struct udict *, int, va_list);
 int udict_control(struct udict *, int, ...);
@@ -574,6 +841,7 @@ struct udict_opaque {
 int udict_get_opaque(struct udict *, struct udict_opaque *, enum udict_type, char const *);
 int udict_get_void(struct udict *, void *, enum udict_type, char const *);
 uint64_t udict_get_uint64(uint8_t const *);
+int64_t udict_get_int64(uint8_t const *);
 int udict_set(struct udict *, char const *, enum udict_type, size_t, uint8_t **);
 int udict_set_opaque(struct udict *, struct udict_opaque, enum udict_type, char const *);
 int udict_set_string(struct udict *, char const *, enum udict_type, char const *);
@@ -597,6 +865,7 @@ void udict_mgr_release(struct udict_mgr *);
 int udict_mgr_control_va(struct udict_mgr *, int, va_list);
 int udict_mgr_control(struct udict_mgr *, int, ...);
 int udict_mgr_vacuum(struct udict_mgr *);
+char const *uref_date_type_str(int);
 void uref_free(struct uref *);
 void uref_init(struct uref *);
 struct uref *uref_alloc(struct uref_mgr *);
@@ -732,6 +1001,12 @@ int uref_flow_delete_name(struct uref *);
 int uref_flow_match_name(struct uref *, char const *);
 int uref_flow_cmp_name(struct uref *, struct uref *);
 int uref_flow_set_def_va(struct uref *, char const *, ...);
+struct ulog {
+	enum uprobe_log_level level;
+	char const *msg;
+	struct uchain prefixes;
+};
+void ulog_init(struct ulog *, enum uprobe_log_level, char const *);
 char const *uprobe_event_str(int);
 struct uprobe *uprobe_use(struct uprobe *);
 void uprobe_release(struct uprobe *);
@@ -751,6 +1026,9 @@ void uprobe_dbg_va(struct uprobe *, struct upipe *, char const *, ...);
 void uprobe_verbose_va(struct uprobe *, struct upipe *, char const *, ...);
 bool uprobe_plumber(int, va_list, struct uref **, char const **);
 void udict_dump(struct udict *, struct uprobe *);
+void ufifo_init(struct ufifo *, uint8_t, void *);
+void *ufifo_pop_internal(struct ufifo *);
+void ufifo_clean(struct ufifo *);
 void urequest_init_uref_mgr(struct urequest *, urequest_func, urequest_free_func);
 void urequest_init_flow_format(struct urequest *, struct uref *, urequest_func, urequest_free_func);
 void urequest_init_ubuf_mgr(struct urequest *, struct uref *, urequest_func, urequest_free_func);
@@ -839,6 +1117,11 @@ int upipe_split_iterate(struct upipe *, struct uref **);
 int upipe_get_sub_mgr(struct upipe *, struct upipe_mgr **);
 int upipe_iterate_sub(struct upipe *, struct upipe **);
 int upipe_sub_get_super(struct upipe *, struct upipe **);
+int upipe_src_get_size(struct upipe *, uint64_t *);
+int upipe_src_get_position(struct upipe *, uint64_t);
+int upipe_src_set_position(struct upipe *, uint64_t);
+int upipe_src_get_range(struct upipe *, uint64_t *, uint64_t *);
+int upipe_src_set_range(struct upipe *, uint64_t, uint64_t);
 struct upipe *upipe_void_alloc(struct upipe_mgr *, struct uprobe *);
 struct upipe *upipe_void_alloc_output(struct upipe *, struct upipe_mgr *, struct uprobe *);
 struct upipe *upipe_void_chain_output(struct upipe *, struct upipe_mgr *, struct uprobe *);
@@ -846,6 +1129,7 @@ int upipe_void_spawn_output(struct upipe *, struct upipe_mgr *, struct uprobe *)
 struct upipe *upipe_void_alloc_input(struct upipe *, struct upipe_mgr *, struct uprobe *);
 struct upipe *upipe_void_chain_input(struct upipe *, struct upipe_mgr *, struct uprobe *);
 struct upipe *upipe_void_alloc_sub(struct upipe *, struct uprobe *);
+struct upipe *upipe_void_chain_sub(struct upipe *, struct uprobe *);
 struct upipe *upipe_void_alloc_output_sub(struct upipe *, struct upipe *, struct uprobe *);
 struct upipe *upipe_void_chain_output_sub(struct upipe *, struct upipe *, struct uprobe *);
 int upipe_void_spawn_output_sub(struct upipe *, struct upipe *, struct uprobe *);
@@ -858,6 +1142,7 @@ int upipe_flow_spawn_output(struct upipe *, struct upipe_mgr *, struct uprobe *,
 struct upipe *upipe_flow_alloc_input(struct upipe *, struct upipe_mgr *, struct uprobe *, struct uref *);
 struct upipe *upipe_flow_chain_input(struct upipe *, struct upipe_mgr *, struct uprobe *, struct uref *);
 struct upipe *upipe_flow_alloc_sub(struct upipe *, struct uprobe *, struct uref *);
+struct upipe *upipe_flow_chain_sub(struct upipe *, struct uprobe *, struct uref *);
 struct upipe *upipe_flow_alloc_output_sub(struct upipe *, struct upipe *, struct uprobe *, struct uref *);
 struct upipe *upipe_flow_chain_output_sub(struct upipe *, struct upipe *, struct uprobe *, struct uref *);
 int upipe_flow_spawn_output_sub(struct upipe *, struct upipe *, struct uprobe *, struct uref *);
@@ -1021,6 +1306,20 @@ int uref_clock_rebase_dts_orig(struct uref *);
 int uref_clock_rebase_pts_sys(struct uref *);
 int uref_clock_rebase_pts_prog(struct uref *);
 int uref_clock_rebase_pts_orig(struct uref *);
+struct uqueue {
+	struct ufifo fifo;
+	uatomic_uint32_t counter;
+	uint32_t length;
+	struct ueventfd event_push;
+	struct ueventfd event_pop;
+};
+bool uqueue_init(struct uqueue *, uint8_t, void *);
+struct upump *uqueue_upump_alloc_push(struct uqueue *, struct upump_mgr *, upump_cb, void *);
+struct upump *uqueue_upump_alloc_pop(struct uqueue *, struct upump_mgr *, upump_cb, void *);
+bool uqueue_push(struct uqueue *, void *);
+void *uqueue_pop_internal(struct uqueue *);
+unsigned int uqueue_length(struct uqueue *);
+void uqueue_clean(struct uqueue *);
 void uref_dump(struct uref *, struct uprobe *);
 int uref_event_get_events(struct uref *, uint64_t *);
 int uref_event_set_events(struct uref *, uint64_t);
@@ -1057,6 +1356,70 @@ int uref_event_set_description(struct uref *, char const *, uint64_t);
 int uref_event_delete_description(struct uref *, uint64_t);
 int uref_event_match_description(struct uref *, char const *, uint64_t);
 int uref_event_cmp_description(struct uref *, struct uref *, uint64_t);
+int uref_m3u_flow_get_version(struct uref *, uint8_t *);
+int uref_m3u_flow_set_version(struct uref *, uint8_t);
+int uref_m3u_flow_delete_version(struct uref *);
+int uref_m3u_flow_match_version(struct uref *, uint8_t, uint8_t);
+int uref_m3u_flow_cmp_version(struct uref *, struct uref *);
+int uref_m3u_get_uri(struct uref *, char const **);
+int uref_m3u_set_uri(struct uref *, char const *);
+int uref_m3u_delete_uri(struct uref *);
+int uref_m3u_match_uri(struct uref *, char const *);
+int uref_m3u_cmp_uri(struct uref *, struct uref *);
+int uref_m3u_master_get_stream_inf(struct uref *, char const **);
+int uref_m3u_master_set_stream_inf(struct uref *, char const *);
+int uref_m3u_master_delete_stream_inf(struct uref *);
+int uref_m3u_master_match_stream_inf(struct uref *, char const *);
+int uref_m3u_master_cmp_stream_inf(struct uref *, struct uref *);
+int uref_m3u_master_get_bandwidth(struct uref *, uint64_t *);
+int uref_m3u_master_set_bandwidth(struct uref *, uint64_t);
+int uref_m3u_master_delete_bandwidth(struct uref *);
+int uref_m3u_master_match_bandwidth(struct uref *, uint64_t, uint64_t);
+int uref_m3u_master_cmp_bandwidth(struct uref *, struct uref *);
+int uref_m3u_master_get_codecs(struct uref *, char const **);
+int uref_m3u_master_set_codecs(struct uref *, char const *);
+int uref_m3u_master_delete_codecs(struct uref *);
+int uref_m3u_master_match_codecs(struct uref *, char const *);
+int uref_m3u_master_cmp_codecs(struct uref *, struct uref *);
+int uref_m3u_playlist_flow_get_type(struct uref *, char const **);
+int uref_m3u_playlist_flow_set_type(struct uref *, char const *);
+int uref_m3u_playlist_flow_delete_type(struct uref *);
+int uref_m3u_playlist_flow_match_type(struct uref *, char const *);
+int uref_m3u_playlist_flow_cmp_type(struct uref *, struct uref *);
+int uref_m3u_playlist_flow_get_target_duration(struct uref *, uint64_t *);
+int uref_m3u_playlist_flow_set_target_duration(struct uref *, uint64_t);
+int uref_m3u_playlist_flow_delete_target_duration(struct uref *);
+int uref_m3u_playlist_flow_match_target_duration(struct uref *, uint64_t, uint64_t);
+int uref_m3u_playlist_flow_cmp_target_duration(struct uref *, struct uref *);
+int uref_m3u_playlist_flow_get_media_sequence(struct uref *, uint64_t *);
+int uref_m3u_playlist_flow_set_media_sequence(struct uref *, uint64_t);
+int uref_m3u_playlist_flow_delete_media_sequence(struct uref *);
+int uref_m3u_playlist_flow_match_media_sequence(struct uref *, uint64_t, uint64_t);
+int uref_m3u_playlist_flow_cmp_media_sequence(struct uref *, struct uref *);
+int uref_m3u_playlist_flow_get_endlist(struct uref *);
+int uref_m3u_playlist_flow_set_endlist(struct uref *);
+int uref_m3u_playlist_flow_delete_endlist(struct uref *);
+int uref_m3u_playlist_flow_cmp_endlist(struct uref *, struct uref *);
+int uref_m3u_playlist_get_seq_duration(struct uref *, uint64_t *);
+int uref_m3u_playlist_set_seq_duration(struct uref *, uint64_t);
+int uref_m3u_playlist_delete_seq_duration(struct uref *);
+int uref_m3u_playlist_match_seq_duration(struct uref *, uint64_t, uint64_t);
+int uref_m3u_playlist_cmp_seq_duration(struct uref *, struct uref *);
+int uref_m3u_playlist_get_seq_time(struct uref *, uint64_t *);
+int uref_m3u_playlist_set_seq_time(struct uref *, uint64_t);
+int uref_m3u_playlist_delete_seq_time(struct uref *);
+int uref_m3u_playlist_match_seq_time(struct uref *, uint64_t, uint64_t);
+int uref_m3u_playlist_cmp_seq_time(struct uref *, struct uref *);
+int uref_m3u_playlist_get_byte_range_len(struct uref *, uint64_t *);
+int uref_m3u_playlist_set_byte_range_len(struct uref *, uint64_t);
+int uref_m3u_playlist_delete_byte_range_len(struct uref *);
+int uref_m3u_playlist_match_byte_range_len(struct uref *, uint64_t, uint64_t);
+int uref_m3u_playlist_cmp_byte_range_len(struct uref *, struct uref *);
+int uref_m3u_playlist_get_byte_range_off(struct uref *, uint64_t *);
+int uref_m3u_playlist_set_byte_range_off(struct uref *, uint64_t);
+int uref_m3u_playlist_delete_byte_range_off(struct uref *);
+int uref_m3u_playlist_match_byte_range_off(struct uref *, uint64_t, uint64_t);
+int uref_m3u_playlist_cmp_byte_range_off(struct uref *, struct uref *);
 int uref_pic_flow_get_macropixel(struct uref *, uint8_t *);
 int uref_pic_flow_set_macropixel(struct uref *, uint8_t);
 int uref_pic_flow_delete_macropixel(struct uref *);
@@ -1126,6 +1489,9 @@ int uref_pic_flow_get_overscan(struct uref *);
 int uref_pic_flow_set_overscan(struct uref *);
 int uref_pic_flow_delete_overscan(struct uref *);
 int uref_pic_flow_cmp_overscan(struct uref *, struct uref *);
+int uref_pic_flow_get_dar(struct uref *, struct urational *);
+int uref_pic_flow_set_dar(struct uref *, struct urational);
+int uref_pic_flow_delete_dar(struct uref *);
 int uref_pic_flow_get_hsize(struct uref *, uint64_t *);
 int uref_pic_flow_set_hsize(struct uref *, uint64_t);
 int uref_pic_flow_delete_hsize(struct uref *);
@@ -1175,6 +1541,7 @@ int uref_pic_flow_add_plane(struct uref *, uint8_t, uint8_t, uint8_t, char const
 int uref_pic_flow_find_chroma(struct uref *, char const *, uint8_t *);
 int uref_pic_flow_check_chroma(struct uref *, uint8_t, uint8_t, uint8_t, char const *);
 int uref_pic_flow_copy_format(struct uref *, struct uref *);
+int uref_pic_flow_max_subsampling(struct uref *, uint8_t *, uint8_t *);
 void uref_pic_flow_clear_format(struct uref *);
 bool uref_pic_flow_compare_format(struct uref *, struct uref *);
 int uref_pic_flow_infer_sar(struct uref *, struct urational);
@@ -1213,6 +1580,14 @@ int uref_pic_get_tff(struct uref *);
 int uref_pic_set_tff(struct uref *);
 int uref_pic_delete_tff(struct uref *);
 int uref_pic_cmp_tff(struct uref *, struct uref *);
+int uref_pic_get_afd(struct uref *, uint8_t *);
+int uref_pic_set_afd(struct uref *, uint8_t);
+int uref_pic_delete_afd(struct uref *);
+int uref_pic_match_afd(struct uref *, uint8_t, uint8_t);
+int uref_pic_cmp_afd(struct uref *, struct uref *);
+int uref_pic_get_cea_708(struct uref *, uint8_t const **, size_t *);
+int uref_pic_set_cea_708(struct uref *, uint8_t const *, size_t);
+int uref_pic_delete_cea_708(struct uref *);
 struct uref *uref_pic_alloc(struct uref_mgr *, struct ubuf_mgr *, int, int);
 int uref_pic_size(struct uref *, size_t *, size_t *, uint8_t *);
 int uref_pic_plane_iterate(struct uref *, char const **);
@@ -1220,9 +1595,10 @@ int uref_pic_plane_size(struct uref *, char const *, size_t *, uint8_t *, uint8_
 int uref_pic_plane_read(struct uref *, char const *, int, int, int, int, uint8_t const **);
 int uref_pic_plane_write(struct uref *, char const *, int, int, int, int, uint8_t **);
 int uref_pic_plane_unmap(struct uref *, char const *, int, int, int, int);
-int uref_pic_plane_clear(struct uref *, char const *, int, int, int, int);
+int uref_pic_plane_clear(struct uref *, char const *, int, int, int, int, int);
 int uref_pic_resize(struct uref *, int, int, int, int);
-int uref_pic_clear(struct uref *, int, int, int, int);
+int uref_pic_clear(struct uref *, int, int, int, int, int);
+int uref_pic_blit(struct uref *, struct ubuf *, int, int, int, int, int, int);
 int uref_pic_replace(struct uref *, struct ubuf_mgr *, int, int, int, int);
 int uref_program_flow_get_name(struct uref *, char const **);
 int uref_program_flow_set_name(struct uref *, char const *);
@@ -1304,6 +1680,50 @@ int uref_sound_write_double(struct uref *, int, int, double **, uint8_t);
 int uref_sound_resize(struct uref *, int, int);
 int uref_sound_interleave(struct uref *, uint8_t *, int, int, uint8_t, uint8_t);
 int uref_sound_replace(struct uref *, struct ubuf_mgr *, int, int);
+ssize_t uuri_escape_len(char const *);
+ssize_t uuri_unescape_len(char const *);
+struct uuri_authority uuri_authority_null(void);
+bool uuri_authority_is_null(struct uuri_authority);
+struct uuri uuri_null(void);
+bool uuri_is_null(struct uuri);
+int uuri_from_str(struct uuri *, char const *);
+int uref_uri_get_scheme(struct uref *, char const **);
+int uref_uri_set_scheme(struct uref *, char const *);
+int uref_uri_delete_scheme(struct uref *);
+int uref_uri_match_scheme(struct uref *, char const *);
+int uref_uri_cmp_scheme(struct uref *, struct uref *);
+int uref_uri_get_userinfo(struct uref *, char const **);
+int uref_uri_set_userinfo(struct uref *, char const *);
+int uref_uri_delete_userinfo(struct uref *);
+int uref_uri_match_userinfo(struct uref *, char const *);
+int uref_uri_cmp_userinfo(struct uref *, struct uref *);
+int uref_uri_get_host(struct uref *, char const **);
+int uref_uri_set_host(struct uref *, char const *);
+int uref_uri_delete_host(struct uref *);
+int uref_uri_match_host(struct uref *, char const *);
+int uref_uri_cmp_host(struct uref *, struct uref *);
+int uref_uri_get_port(struct uref *, char const **);
+int uref_uri_set_port(struct uref *, char const *);
+int uref_uri_delete_port(struct uref *);
+int uref_uri_match_port(struct uref *, char const *);
+int uref_uri_cmp_port(struct uref *, struct uref *);
+int uref_uri_get_path(struct uref *, char const **);
+int uref_uri_set_path(struct uref *, char const *);
+int uref_uri_delete_path(struct uref *);
+int uref_uri_match_path(struct uref *, char const *);
+int uref_uri_cmp_path(struct uref *, struct uref *);
+int uref_uri_get_query(struct uref *, char const **);
+int uref_uri_set_query(struct uref *, char const *);
+int uref_uri_delete_query(struct uref *);
+int uref_uri_match_query(struct uref *, char const *);
+int uref_uri_cmp_query(struct uref *, struct uref *);
+int uref_uri_get_fragment(struct uref *, char const **);
+int uref_uri_set_fragment(struct uref *, char const *);
+int uref_uri_delete_fragment(struct uref *);
+int uref_uri_match_fragment(struct uref *, char const *);
+int uref_uri_cmp_fragment(struct uref *, struct uref *);
+void uref_uri_delete(struct uref *);
+int uref_uri_import(struct uref *, struct uref *);
 ]]
-libupipe = ffi.load("libupipe.so", true)
+libupipe = ffi.load("libupipe.so.0", true)
 libupipe_static = ffi.load("libupipe.static.so", true)

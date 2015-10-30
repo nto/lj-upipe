@@ -1,26 +1,26 @@
-local ffi = require "ffi"
+local ffi = require("ffi")
 ffi.cdef [[
 enum {
-    EV_UNDEF    = (int)0xFFFFFFFF,
-    EV_NONE     =            0x00,
-    EV_READ     =            0x01,
-    EV_WRITE    =            0x02,
-    EV__IOFDSET =            0x80,
-    EV_IO       =         EV_READ,
-    EV_TIMER    =      0x00000100,
-    EV_PERIODIC =      0x00000200,
-    EV_SIGNAL   =      0x00000400,
-    EV_CHILD    =      0x00000800,
-    EV_STAT     =      0x00001000,
-    EV_IDLE     =      0x00002000,
-    EV_PREPARE  =      0x00004000,
-    EV_CHECK    =      0x00008000,
-    EV_EMBED    =      0x00010000,
-    EV_FORK     =      0x00020000,
-    EV_CLEANUP  =      0x00040000,
-    EV_ASYNC    =      0x00080000,
-    EV_CUSTOM   =      0x01000000,
-    EV_ERROR    = (int)0x80000000
+	EV_UNDEF    = (int)0xFFFFFFFF,
+	EV_NONE     =            0x00,
+	EV_READ     =            0x01,
+	EV_WRITE    =            0x02,
+	EV__IOFDSET =            0x80,
+	EV_IO       =         EV_READ,
+	EV_TIMER    =      0x00000100,
+	EV_PERIODIC =      0x00000200,
+	EV_SIGNAL   =      0x00000400,
+	EV_CHILD    =      0x00000800,
+	EV_STAT     =      0x00001000,
+	EV_IDLE     =      0x00002000,
+	EV_PREPARE  =      0x00004000,
+	EV_CHECK    =      0x00008000,
+	EV_EMBED    =      0x00010000,
+	EV_FORK     =      0x00020000,
+	EV_CLEANUP  =      0x00040000,
+	EV_ASYNC    =      0x00080000,
+	EV_CUSTOM   =      0x01000000,
+	EV_ERROR    = (int)0x80000000
 };
 typedef double ev_tstamp;
 struct ev_watcher {
@@ -244,4 +244,4 @@ void ev_async_stop(struct ev_loop *, ev_async *);
 void ev_async_send(struct ev_loop *, ev_async *);
 void ev_once(struct ev_loop *, int, int, ev_tstamp, void (*)(int, void *), void *);
 ]]
-return ffi.load("ev", true)
+return ffi.load("libev.so.4", true)

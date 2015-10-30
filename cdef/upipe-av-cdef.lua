@@ -1,4 +1,4 @@
-local ffi = require "ffi"
+local ffi = require("ffi")
 ffi.cdef [[
 bool upipe_av_init(bool, struct uprobe *);
 void upipe_av_clean(void);
@@ -190,6 +190,10 @@ enum AVCodecID {
 	AV_CODEC_ID_MVC1_DEPRECATED,
 	AV_CODEC_ID_MVC2_DEPRECATED,
 	AV_CODEC_ID_HQX,
+	AV_CODEC_ID_TDSC,
+	AV_CODEC_ID_HQ_HQA,
+	AV_CODEC_ID_HAP,
+	AV_CODEC_ID_DDS,
 	AV_CODEC_ID_BRENDER_PIX = 1112557912,
 	AV_CODEC_ID_Y41P = 1496592720,
 	AV_CODEC_ID_ESCAPE130 = 1160852272,
@@ -248,6 +252,7 @@ enum AVCodecID {
 	AV_CODEC_ID_PCM_S8_PLANAR,
 	AV_CODEC_ID_PCM_S24LE_PLANAR_DEPRECATED,
 	AV_CODEC_ID_PCM_S32LE_PLANAR_DEPRECATED,
+	AV_CODEC_ID_PCM_S16BE_PLANAR_DEPRECATED,
 	AV_CODEC_ID_PCM_S24LE_PLANAR = 407917392,
 	AV_CODEC_ID_PCM_S32LE_PLANAR = 542135120,
 	AV_CODEC_ID_PCM_S16BE_PLANAR = 1347637264,
@@ -289,6 +294,7 @@ enum AVCodecID {
 	AV_CODEC_ID_ADPCM_DTK = 1146374944,
 	AV_CODEC_ID_ADPCM_IMA_RAD = 1380008992,
 	AV_CODEC_ID_ADPCM_G726LE = 909260615,
+	AV_CODEC_ID_ADPCM_THP_LE = 1414025292,
 	AV_CODEC_ID_AMR_NB = 73728,
 	AV_CODEC_ID_AMR_WB,
 	AV_CODEC_ID_RA_144 = 77824,
@@ -377,6 +383,7 @@ enum AVCodecID {
 	AV_CODEC_ID_DSD_MSBF,
 	AV_CODEC_ID_DSD_LSBF_PLANAR = 1146307633,
 	AV_CODEC_ID_DSD_MSBF_PLANAR = 1146307640,
+	AV_CODEC_ID_4GV = 1932814198,
 	AV_CODEC_ID_FIRST_SUBTITLE = 94208,
 	AV_CODEC_ID_DVD_SUBTITLE = 94208,
 	AV_CODEC_ID_DVB_SUBTITLE,
@@ -401,6 +408,7 @@ enum AVCodecID {
 	AV_CODEC_ID_VPLAYER = 1448111218,
 	AV_CODEC_ID_PJS = 1349012051,
 	AV_CODEC_ID_ASS = 1095979808,
+	AV_CODEC_ID_HDMV_TEXT_SUBTITLE = 1111774296,
 	AV_CODEC_ID_FIRST_UNKNOWN = 98304,
 	AV_CODEC_ID_TTF = 98304,
 	AV_CODEC_ID_BINTEXT = 1112823892,
@@ -768,6 +776,16 @@ int uref_avcenc_set_codec_name(struct uref *, char const *);
 int uref_avcenc_delete_codec_name(struct uref *);
 int uref_avcenc_match_codec_name(struct uref *, char const *);
 int uref_avcenc_cmp_codec_name(struct uref *, struct uref *);
+int upipe_avcenc_mgr_set_flow_def_from_name(struct upipe_mgr *, struct uref *, char const *);
+int upipe_avfsink_get_mime(struct upipe *, char const **);
+int upipe_avfsink_set_mime(struct upipe *, char const *);
+int upipe_avfsink_get_format(struct upipe *, char const **);
+int upipe_avfsink_set_format(struct upipe *, char const *);
+int upipe_avfsink_get_duration(struct upipe *, uint64_t *);
+int upipe_avfsrc_get_option(struct upipe *, char const *, char const **);
+int upipe_avfsrc_set_option(struct upipe *, char const *, char const *);
+int upipe_avfsrc_get_time(struct upipe *, uint64_t *);
+int upipe_avfsrc_set_time(struct upipe *, uint64_t);
 enum AVPixelFormat {
 	AV_PIX_FMT_NONE = -129,
 	AV_PIX_FMT_YUV420P = 0,
@@ -824,6 +842,7 @@ enum AVPixelFormat {
 	AV_PIX_FMT_VAAPI_MOCO,
 	AV_PIX_FMT_VAAPI_IDCT,
 	AV_PIX_FMT_VAAPI_VLD,
+	AV_PIX_FMT_VAAPI = 53,
 	AV_PIX_FMT_YUV420P16LE,
 	AV_PIX_FMT_YUV420P16BE,
 	AV_PIX_FMT_YUV422P16LE,
@@ -899,6 +918,8 @@ enum AVPixelFormat {
 	AV_PIX_FMT_GBRAP16BE_LIBAV,
 	AV_PIX_FMT_GBRAP16LE_LIBAV,
 	AV_PIX_FMT_QSV,
+	AV_PIX_FMT_MMAL,
+	AV_PIX_FMT_D3D11VA_VLD,
 	AV_PIX_FMT_RGBA64BE = 291,
 	AV_PIX_FMT_RGBA64LE,
 	AV_PIX_FMT_BGRA64BE,
@@ -941,6 +962,13 @@ enum AVPixelFormat {
 	AV_PIX_FMT_BAYER_GBRG16BE,
 	AV_PIX_FMT_BAYER_GRBG16LE,
 	AV_PIX_FMT_BAYER_GRBG16BE,
+	AV_PIX_FMT_YUV440P10LE,
+	AV_PIX_FMT_YUV440P10BE,
+	AV_PIX_FMT_YUV440P12LE,
+	AV_PIX_FMT_YUV440P12BE,
+	AV_PIX_FMT_AYUV64LE,
+	AV_PIX_FMT_AYUV64BE,
+	AV_PIX_FMT_VIDEOTOOLBOX,
 	AV_PIX_FMT_NB,
 	PIX_FMT_NONE = -129,
 	PIX_FMT_YUV420P = 0,
@@ -1079,5 +1107,5 @@ enum AVSampleFormat {
 int upipe_av_samplefmt_to_flow_def(struct uref *, enum AVSampleFormat, uint8_t);
 enum AVSampleFormat upipe_av_samplefmt_from_flow_def(struct uref *, uint8_t *);
 ]]
-libupipe_av = ffi.load("libupipe_av.so", true)
+libupipe_av = ffi.load("libupipe_av.so.0", true)
 libupipe_av_static = ffi.load("libupipe-av.static.so", true)

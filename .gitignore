@@ -1,4 +1,7 @@
 /*.static.c
-/*_sig.lua
+/*-sigs.lua
 /*.static.so
+/*-getters.lua
 /build-*/
+/upipe.defs
+/libffi-stdarg.so

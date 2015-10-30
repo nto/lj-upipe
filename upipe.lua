@@ -1,3 +1,21 @@
+local ffi = require "ffi"
+local va_args = require "ffi-stdarg"
+local fmt = string.format
+local C = ffi.C
+
+ffi.cdef [[
+    // stdlib.h
+    typedef long ssize_t;
+    void *malloc(size_t);
+    void free(void *);
+
+    // stdio.h
+    typedef struct _IO_FILE FILE;
+
+    // time.h
+    typedef long time_t;
+]]
+
 require "upipe-cdef"
 require "upipe-modules-cdef"
 require "upipe-framers-cdef"
@@ -7,83 +25,6 @@ require "upipe-filters-cdef"
 require "upipe-swscale-cdef"
 require "upipe-x264-cdef"
 require "upump-ev-cdef"
-
-local ffi = require "ffi"
-local fmt = string.format
-local C = ffi.C
-
--- stdlib.h
-ffi.cdef [[
-    void *malloc(size_t);
-    void free(void *);
-]]
-
--- upipe.h
-ffi.cdef [[
-    enum upipe_command {
-	UPIPE_ATTACH_UREF_MGR,
-	UPIPE_ATTACH_UPUMP_MGR,
-	UPIPE_ATTACH_UCLOCK,
-	UPIPE_GET_URI,
-	UPIPE_SET_URI,
-	UPIPE_GET_OPTION,
-	UPIPE_SET_OPTION,
-	UPIPE_REGISTER_REQUEST,
-	UPIPE_UNREGISTER_REQUEST,
-	UPIPE_SET_FLOW_DEF,
-	UPIPE_GET_MAX_LENGTH,
-	UPIPE_SET_MAX_LENGTH,
-	UPIPE_FLUSH,
-	UPIPE_GET_OUTPUT,
-	UPIPE_SET_OUTPUT,
-	UPIPE_ATTACH_UBUF_MGR,
-	UPIPE_GET_FLOW_DEF,
-	UPIPE_GET_OUTPUT_SIZE,
-	UPIPE_SET_OUTPUT_SIZE,
-	UPIPE_SPLIT_ITERATE,
-	UPIPE_GET_SUB_MGR,
-	UPIPE_ITERATE_SUB,
-	UPIPE_SUB_GET_SUPER,
-	UPIPE_CONTROL_LOCAL = 0x8000
-    };
-]]
-
--- uref.h
-ffi.cdef [[
-    enum uref_date_type {
-	UREF_DATE_NONE = 0,
-	UREF_DATE_CR = 1,
-	UREF_DATE_DTS = 2,
-	UREF_DATE_PTS = 3
-    };
-]]
-
--- uprobe.h
-ffi.cdef [[
-    enum uprobe_event {
-	UPROBE_LOG,
-	UPROBE_FATAL,
-	UPROBE_ERROR,
-	UPROBE_READY,
-	UPROBE_DEAD,
-	UPROBE_SOURCE_END,
-	UPROBE_SINK_END,
-	UPROBE_NEED_OUTPUT,
-	UPROBE_PROVIDE_REQUEST,
-	UPROBE_NEED_UPUMP_MGR,
-	UPROBE_FREEZE_UPUMP_MGR,
-	UPROBE_THAW_UPUMP_MGR,
-	UPROBE_NEW_FLOW_DEF,
-	UPROBE_NEW_RAP,
-	UPROBE_SPLIT_UPDATE,
-	UPROBE_SYNC_ACQUIRED,
-	UPROBE_SYNC_LOST,
-	UPROBE_CLOCK_REF,
-	UPROBE_CLOCK_TS,
-	UPROBE_CLOCK_UTC,
-	UPROBE_LOCAL = 0x8000
-    };
-]]
 
 UCLOCK_FREQ = 27000000
 
@@ -98,10 +39,16 @@ local init = {
 	    function (mgr, probe, signature, args)
 		local pipe = upipe_alloc(mgr, probe)
 		if cb.init then cb.init(pipe) end
+		pipe.props.clean = cb.clean
 		return C.upipe_use(pipe)
 	    end
 	mgr.upipe_input = cb.input
 	mgr.upipe_control = cb.control
+    end,
+
+    uclock = function (clock, now, mktime)
+	clock.uclock_now = now
+	clock.uclock_mktime = mktime
     end
 }
 
@@ -111,23 +58,24 @@ local function alloc(ty)
     local cb = ffi.cast("urefcount_cb", function (refcount)
 	local data = ffi.cast(ffi.typeof("$ *", st),
 	    ffi.cast("char *", refcount) + ffi.offsetof(ct, "data"))
+	if ty == "upipe" or ty == "uclock" then
+	    local k = tostring(data):match(": 0x(.*)")
+	    if props[k] and props[k].clean then props[k].clean(data) end
+	    props[k] = nil
+	end
 	if ty ~= "upipe_mgr" then C[ty .. "_clean"](data) end
 	if cbref[tostring(refcount)] then
 	    cbref[tostring(refcount)]:free()
 	    cbref[tostring(refcount)] = nil
 	end
-	if ty == "upipe" then
-	    local k = tostring(data):match(": 0x(.*)")
-	    props[k] = nil
-	end
 	C.free(ffi.cast("void *", refcount))
     end)
     return function (...)
-	local cd = ffi.cast(ffi.typeof("$ *", ct), malloc(ffi.sizeof(ct)))
+	local cd = ffi.cast(ffi.typeof("$ *", ct), C.malloc(ffi.sizeof(ct)))
 	local args = { ... }
 	for i, arg in ipairs(args) do
 	    if ffi.istype("struct uprobe", arg) then
-		args[i] = uprobe_use(arg)
+		args[i] = C.uprobe_use(arg)
 	    end
 	end
 	(init[ty] or C[ty .. "_init"])(cd.data, unpack(args))
@@ -143,6 +91,7 @@ end
 
 uprobe_alloc = alloc "uprobe"
 upipe_alloc = alloc "upipe"
+uclock_alloc = alloc "uclock"
 
 local mgr_alias = {
     umem = {
@@ -168,16 +117,35 @@ for _, name in ipairs { 'upump', 'udict', 'uref', 'umem', 'ubuf' } do
     _G[name] = setmetatable({ name = name }, mgr_mt)
 end
 
-_G.uprobe = setmetatable({ }, {
+local probe_args = require "uprobe-args"
+
+local function get_probe_args(args, args_list)
+    if not args_list then return args end
+    return va_args(args, unpack(args_list))
+end
+
+local function ubase_err(ret)
+    return type(ret) == "string" and C["UBASE_ERR_" .. ret:upper()] or ret or C.UBASE_ERR_NONE
+end
+
+uprobe = setmetatable({ }, {
     __call = function (_, uprobe_throw)
 	if type(uprobe_throw) ~= 'function' then
-	    local probe_events = { }
+	    local events = { }
 	    for k, v in pairs(uprobe_throw) do
-		probe_events[C[fmt("UPROBE_%s", k)]] = v
+		local k = k:upper()
+		events[C[fmt("UPROBE_%s", k)]] = { func = v, args = probe_args[k] }
 	    end
 	    uprobe_throw = function (probe, pipe, event, args)
-		if probe_events[event] then
-		    return probe_events[event](probe, pipe, args) or C.UBASE_ERR_NONE
+		local e = events[event]
+		if e then
+		    if event >= C.UPROBE_LOCAL then
+			local signature = va_args(args, "uint32_t")
+			if signature ~= pipe.mgr.signature then
+			    return C.UBASE_ERR_UNHANDLED
+			end
+		    end
+		    return ubase_err(e.func(probe, pipe, get_probe_args(args, e.args)))
 		else
 		    return probe:throw_next(pipe, event, args)
 		end
@@ -203,36 +171,83 @@ _G.uprobe = setmetatable({ }, {
     end
 })
 
-local sigs = { }
-function upipe_sig(name, n1, n2, n3, n4)
+uclock = setmetatable({ }, {
+    __index = function (_, key)
+	return function (...)
+	    return ffi.gc(C[fmt("uclock_%s_alloc", key)](...), C.uclock_release)
+	end
+    end
+})
+
+local upipe_getters = require "upipe-getters"
+local uref_getters = require "uref-getters"
+
+local function getter(getters, f, key)
+    if getters[key] then
+	return function (self, arg)
+	    if arg ~= nil then return f(self, arg) end
+	    local arg_p = ffi.new(getters[key] .. "[1]")
+	    local ret = f(self, arg_p)
+	    if not C.ubase_check(ret) then
+		return nil, ret
+	    end
+	    return arg_p[0]
+	end
+    end
+end
+
+local function fourcc(n1, n2, n3, n4)
     n1 = type(n1) == 'string' and n1:byte(1) or n1
     n2 = type(n2) == 'string' and n2:byte(1) or n2
     n3 = type(n3) == 'string' and n3:byte(1) or n3
     n4 = type(n4) == 'string' and n4:byte(1) or n4
-    sigs[n4*2^24 + n3*2^16 + n2*2^8 + n1] = name
+    return n4*2^24 + n3*2^16 + n2*2^8 + n1
 end
 
-require "upipe-modules_sig"
-require "upipe-ts_sig"
-require "upipe-av_sig"
-require "upipe-filters_sig"
-require "upipe-x264_sig"
+local sigs = { }
+function upipe_sig(name, n1, n2, n3, n4)
+    sigs[fourcc(n1, n2, n3, n4)] = name
+end
+
+require "upipe-modules-sigs"
+require "upipe-ts-sigs"
+require "upipe-av-sigs"
+require "upipe-filters-sigs"
+require "upipe-framers-sigs"
+require "upipe-x264-sigs"
 upipe_sig = nil
 
+local sig = {
+    void = fourcc('v','o','i','d'),
+    flow = fourcc('f','l','o','w'),
+}
+
 ffi.metatype("struct upipe_mgr", {
-    __index = {
-	new = function (mgr, probe)
-	    return ffi.gc(C.upipe_void_alloc(mgr, uprobe_use(probe)), C.upipe_release)
-	end,
-	new_flow = function (mgr, probe, flow)
-	    return ffi.gc(C.upipe_flow_alloc(mgr, uprobe_use(probe), flow), C.upipe_release)
+    __index = function (mgr, key)
+	if key == 'new' then key = 'new_void' end
+	local mgr_sig = key:match("^new_(.*)")
+	if mgr_sig then
+	    return function (mgr, probe, ...)
+		local pipe = C.upipe_alloc(mgr, C.uprobe_use(probe), sig[mgr_sig] or 0, ...)
+		assert(pipe ~= nil, "upipe_alloc failed")
+		return ffi.gc(pipe, C.upipe_release)
+	    end
 	end
-    },
+	return C[fmt("upipe_%s_mgr_%s", sigs[mgr.signature], key)]
+    end,
     __newindex = function (mgr, key, val)
 	local sym = fmt("upipe_%s_mgr_set_%s", sigs[mgr.signature], key)
 	C[sym](mgr, val)
     end
 })
+
+local function iterator(pipe, f, t)
+    local item_p = ffi.new(t .. "[1]")
+    return function ()
+	assert(ubase_check(f(pipe, item_p)))
+	return item_p[0] ~= nil and item_p[0] or nil
+    end
+end
 
 ffi.metatype("struct upipe", {
     __index = function (pipe, key)
@@ -244,8 +259,29 @@ ffi.metatype("struct upipe", {
 	    local k = tostring(pipe):match(": 0x(.*)")
 	    if not props[k] then props[k] = { } end
 	    return props[k]
+	elseif key == 'release' then
+	    return function (pipe)
+		ffi.gc(pipe, nil)
+		C.upipe_release(pipe)
+	    end
+	elseif key == 'iterate_sub' then
+	    return function (pipe, p)
+		local f = C.upipe_iterate_sub
+		return p and f(pipe, p) or iterator(pipe, f, "struct upipe *")
+	    end
+	elseif key == 'split_iterate' then
+	    return function (pipe, p)
+		local f = C.upipe_split_iterate
+		return p and f(pipe, p) or iterator(pipe, f, "struct uref *")
+	    end
+	elseif key == 'iterate' then
+	    return function (pipe, f, t)
+		if type(f) == 'string' then f = pipe[f] end
+		return iterator(pipe, f, t)
+	    end
 	end
-	return C[fmt("upipe_%s", key)]
+	local f =  C[fmt("upipe_%s", key)]
+	return getter(upipe_getters, f, key) or f
     end,
     __newindex = function (pipe, key, val)
 	local sym = fmt("upipe_set_%s", key)
@@ -254,11 +290,9 @@ ffi.metatype("struct upipe", {
     __concat = function (pipe, next_pipe)
         local last = pipe
         local output = ffi.new("struct upipe *[1]")
-        while true do
-            if not C.ubase_check(last:get_output(output)) then break end
-            if output[0] == nil then break end
-            last = output[0]
-        end
+	while C.ubase_check(last:get_output(output)) and output[0] ~= nil do
+	    last = output[0]
+	end
         last.output = next_pipe
         return pipe
     end,
@@ -266,7 +300,8 @@ ffi.metatype("struct upipe", {
 
 ffi.metatype("struct uref", {
     __index = function (_, key)
-	return C[fmt("uref_%s", key)]
+	local f = C[fmt("uref_%s", key)]
+	return getter(uref_getters, f, key) or f
     end
 })
 
@@ -282,6 +317,12 @@ ffi.metatype("struct upump", {
     end
 })
 
+ffi.metatype("struct urefcount", {
+    __index = function (_, key)
+	return C[fmt("urefcount_%s", key)]
+    end
+})
+
 ffi.metatype("struct uprobe", {
     __index = function (_, key)
 	return C[fmt("uprobe_%s", key)]
@@ -294,8 +335,20 @@ ffi.metatype("struct uprobe", {
     end
 })
 
+ffi.metatype("struct uclock", {
+    __index = function (_, key)
+	if key == 'props' then
+	    local k = tostring(pipe):match(": 0x(.*)")
+	    if not props[k] then props[k] = { } end
+	    return props[k]
+	end
+	return C[fmt("uclock_%s", key)]
+    end
+})
+
 return setmetatable({
     name = "upipe",
     sigs = sigs,
-    mgr = alloc("upipe_mgr")
+    mgr = alloc("upipe_mgr"),
+    iterator = iterator
 }, mgr_mt)

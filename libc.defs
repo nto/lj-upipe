@@ -1,0 +1,5 @@
+FILE
+ssize_t
+struct iovec
+struct __va_list_tag
+time_t

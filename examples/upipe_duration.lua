@@ -21,9 +21,9 @@ local count_mgr = upipe.mgr {
     end,
 
     input = function (pipe, ref, pump)
-	local duration = ffi.new("uint64_t[1]")
-	if ubase_check(ref:clock_get_duration(duration)) then
-	    pipe.props.duration = pipe.props.duration + tonumber(duration[0])
+	local duration = ref:clock_get_duration()
+	if duration then
+	    pipe.props.duration = pipe.props.duration + duration
 	end
 	ref:free()
     end,
@@ -36,7 +36,12 @@ local count_mgr = upipe.mgr {
     end
 }
 
-local file = assert(arg[1])
+if #arg ~= 1 then
+    io.stderr:write("Usage: ", arg[0], " <filename>\n")
+    os.exit(1)
+end
+
+local file = arg[1]
 local loop = ffi.gc(ev_default_loop(0), ev_loop_destroy)
 
 -- managers
@@ -50,7 +55,7 @@ local probe =
     uprobe.ubuf_mem(umem_mgr, UBUF_POOL_DEPTH, UBUF_SHARED_POOL_DEPTH) ..
     uprobe.upump_mgr(upump_mgr) ..
     uprobe.uref_mgr(uref_mgr) ..
-    uprobe.stdio(ffi.C.stderr, UPROBE_LOG_LEVEL)
+    uprobe.stdio_color(ffi.C.stderr, UPROBE_LOG_LEVEL)
 
 -- pipes
 local sink = count_mgr:new()
@@ -70,7 +75,7 @@ src.output = ts_demux_mgr:new(
     uprobe.selflow(UPROBE_SELFLOW_VOID, "auto",
 	uprobe.selflow(UPROBE_SELFLOW_PIC, "auto",
 	    uprobe {
-		NEW_FLOW_DEF = function (probe, pipe, args)
+		new_flow_def = function (probe, pipe, flow_def)
 		    pipe.output = sink
 		end } ..
 	    probe) ..
@@ -80,4 +85,4 @@ src.output = ts_demux_mgr:new(
 -- main loop
 ev_run(loop, 0)
 
-print(string.format("%.2f", sink.props.duration / UCLOCK_FREQ))
+print(string.format("%.2f", tonumber(sink.props.duration) / UCLOCK_FREQ))
