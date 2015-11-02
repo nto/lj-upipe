@@ -774,6 +774,7 @@ struct upipe_mgr *upipe_avcenc_mgr_alloc(void);
 int uref_avcenc_get_codec_name(struct uref *, char const **);
 int uref_avcenc_set_codec_name(struct uref *, char const *);
 int uref_avcenc_delete_codec_name(struct uref *);
+int uref_avcenc_copy_codec_name(struct uref *, struct uref *);
 int uref_avcenc_match_codec_name(struct uref *, char const *);
 int uref_avcenc_cmp_codec_name(struct uref *, struct uref *);
 int upipe_avcenc_mgr_set_flow_def_from_name(struct upipe_mgr *, struct uref *, char const *);

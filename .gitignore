@@ -5,3 +5,4 @@
 /build-*/
 /upipe.defs
 /libffi-stdarg.so
+/libupipe-helper.so

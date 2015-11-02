@@ -16,12 +16,12 @@ LIST = upipe \
        upipe-x264
 
 STATIC_SO = $(LIST:%=lib%.static.so)
-LIST_CDEF = $(LIST:%=cdef/%-cdef.lua)
+LIST_CDEF = $(LIST:%=cdef/%-cdef.lua) cdef/upipe-helper-cdef.lua
 SIG_LUA = $(LIST:%=%-sigs.lua)
 CDEF_LUA = $(LIST_CDEF) cdef/libev.lua cdef/upump-ev-cdef.lua
 GETTERS_LUA = upipe-getters.lua uref-getters.lua
-ARGS_LUA = uprobe-args.lua
-SO = libffi-stdarg.so
+ARGS_LUA = uprobe-args.lua upipe-control-args.lua
+SO = libffi-stdarg.so libupipe-helper.so
 
 LUA_SRC = upipe.lua ffi-stdarg.lua $(CDEF_LUA) $(SIG_LUA) $(GETTERS_LUA) $(ARGS_LUA)
 
@@ -37,7 +37,9 @@ clean: $(LIST:%=clean-static-so-%)
 	$(RM) $(SIG_LUA)
 	$(RM) $(GETTERS_LUA)
 	$(RM) $(LIST_CDEF)
+	$(RM) $(SO)
 	$(RM) upipe.defs
+	$(RM) -r build-upipe-helper
 
 #-------------------------------------------------------------------------------
 # static so
@@ -140,6 +142,32 @@ cdef/upipe-%-cdef.lua: libupipe-%.static.so upipe.defs libc.defs
 		$(addprefix --prefix ,$(prefix_$*)) \
 		$(LIB_DIR)/libupipe_$(lib_$*).so.0 \
 		libupipe-$*.static.so
+	@sed 's/struct __va_list_tag \*/va_list/' -i $@
+
+#-------------------------------------------------------------------------------
+# upipe-helper
+#-------------------------------------------------------------------------------
+
+build-upipe-helper/upipe/upipe_helper_upipe.h:
+	@echo gen $@
+	@$(RM) -r build-upipe-helper
+	@mkdir -p build-upipe-helper/upipe
+	@cp "$(INCLUDE_DIR)"/upipe/upipe_helper_* build-upipe-helper/upipe
+	@sed -e 's/^static /       /' -i build-upipe-helper/upipe/*.h
+
+libupipe-helper.so: CPPFLAGS := -Ibuild-upipe-helper $(CPPFLAGS)
+libupipe-helper.so: build-upipe-helper/upipe/upipe_helper_upipe.h
+
+cdef/upipe-helper-cdef.lua: libupipe-helper.so upipe.defs libc.defs
+	@echo gen $@
+	@gen-ffi-cdef \
+		--global \
+		--output $@ \
+		--read-defs libc.defs \
+		--read-defs upipe.defs \
+		--prefix upipe_helper_ \
+		--struct upipe_helper_mgr \
+		$<
 	@sed 's/struct __va_list_tag \*/va_list/' -i $@
 
 #-------------------------------------------------------------------------------

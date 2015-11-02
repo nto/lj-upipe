@@ -25,6 +25,7 @@ require "upipe-filters-cdef"
 require "upipe-swscale-cdef"
 require "upipe-x264-cdef"
 require "upump-ev-cdef"
+require "upipe-helper-cdef"
 
 UCLOCK_FREQ = 27000000
 
@@ -259,6 +260,8 @@ ffi.metatype("struct upipe", {
 	    local k = tostring(pipe):match(": 0x(.*)")
 	    if not props[k] then props[k] = { } end
 	    return props[k]
+	elseif key == 'helper' then
+	    return pipe.props.helper
 	elseif key == 'release' then
 	    return function (pipe)
 		ffi.gc(pipe, nil)
@@ -346,9 +349,130 @@ ffi.metatype("struct uclock", {
     end
 })
 
+local function container_of(ptr, ct, member)
+    return ffi.cast(ct, ffi.cast("void *", ptr) - ffi.offsetof(ct, member))
+end
+
+local ctrl_args = require "upipe-control-args"
+
+local function control_args(cmd, args)
+    if not ctrl_args[cmd] then return args end
+    return va_args(args, unpack(ctrl_args[cmd]))
+end
+
+local function upipe_helper_alloc(cb)
+    local ct = ffi.typeof("struct upipe_helper_mgr")
+    local h_mgr = ffi.cast(ffi.typeof("$ *", ct), malloc(ffi.sizeof(ct)))
+
+    local mgr = h_mgr.mgr
+    mgr.upipe_alloc = cb.alloc or
+	function (mgr, probe, signature, args)
+	    local ct = ffi.typeof("struct upipe_helper")
+	    local h_pipe = ffi.cast(ffi.typeof("$ *", ct), malloc(ffi.sizeof(ct)))
+	    local pipe = ffi.gc(h_pipe.upipe, C.upipe_release)
+	    pipe:init(mgr, probe)
+	    pipe:helper_init_urefcount()
+	    pipe:helper_init_output()
+	    pipe:helper_init_output_size(cb.output_size or 0)
+	    pipe:helper_init_input()
+	    pipe:helper_init_uclock()
+	    pipe:helper_init_upump_mgr()
+	    pipe:helper_init_uref_mgr()
+	    pipe:helper_init_ubuf_mgr()
+	    pipe:helper_init_bin_input()
+	    pipe:helper_init_sync()
+	    pipe:helper_init_uref_stream()
+	    pipe:helper_init_flow_def()
+	    pipe:helper_init_upump()
+	    pipe:throw_ready()
+	    pipe.props.helper = h_pipe
+	    if cb.init then cb.init(pipe, args) end
+	    pipe.props.clean = cb.clean
+	    return pipe:use()
+	end
+
+    mgr.upipe_input = cb.input
+
+    if type(cb.control) == "function" then
+	mgr.upipe_control = cb.control
+    else
+	local control = { }
+
+	if cb.output then
+	    control[C.UPIPE_SET_OUTPUT] = C.upipe_helper_set_output
+	    control[C.UPIPE_GET_OUTPUT] = C.upipe_helper_get_output
+	    control[C.UPIPE_REGISTER_REQUEST] = C.upipe_helper_alloc_output_proxy
+	    control[C.UPIPE_UNREGISTER_REQUEST] = C.upipe_helper_free_output_proxy
+	    control[C.UPIPE_GET_FLOW_DEF] = C.upipe_helper_get_flow_def
+	end
+
+	if cb.output_size then
+	    control[C.UPIPE_SET_OUTPUT_SIZE] = C.upipe_helper_set_output_size
+	    control[C.UPIPE_GET_OUTPUT_SIZE] = C.upipe_helper_get_output_size
+	end
+
+	if cb.upump_mgr then
+	    control[C.UPIPE_ATTACH_UPUMP_MGR] = C.upipe_helper_attach_upump_mgr
+	end
+
+	for k, v in pairs(cb.control) do
+	    control[C["UPIPE_" .. k:upper()]] = v
+	end
+
+	mgr.upipe_control = function (pipe, cmd, args)
+	    local f = control[cmd] or function () return "unhandled" end
+	    local ret = ubase_err(f(pipe, control_args(cmd, args)))
+	    if ret == C.UBASE_ERR_UNHANDLED and cb.bin_input then
+		ret = C.upipe_helper_control_bin_input(pipe, cmd, args)
+	    end
+	    if ret == C.UBASE_ERR_UNHANDLED and cb.bin_output then
+		ret = C.upipe_helper_control_bin_output(pipe, cmd, args)
+	    end
+	    return ret
+	end
+    end
+
+    h_mgr.refcount_cb = function (refcount)
+	local h_pipe = container_of(refcount, "struct upipe_helper", "urefcount")
+	local pipe = h_pipe.upipe
+	local k = tostring(pipe):match(": 0x(.*)")
+	if props[k] and props[k].clean then props[k].clean(pipe) end
+	pipe:throw_dead()
+	props[k] = nil
+	pipe:helper_clean_urefcount()
+	pipe:helper_clean_output()
+	pipe:helper_clean_output_size()
+	pipe:helper_clean_input()
+	pipe:helper_clean_uclock()
+	pipe:helper_clean_upump_mgr()
+	pipe:helper_clean_uref_mgr()
+	pipe:helper_clean_ubuf_mgr()
+	pipe:helper_clean_bin_input()
+	pipe:helper_clean_sync()
+	pipe:helper_clean_uref_stream()
+	pipe:helper_clean_flow_def()
+	pipe:helper_clean_upump()
+	pipe:clean()
+	C.free(h_pipe)
+    end
+
+    local refcount_cb = ffi.cast("urefcount_cb", function (refcount)
+	C.free(container_of(refcount, ct, "refcount"))
+    end)
+
+    h_mgr.refcount:init(refcount_cb)
+    mgr.refcount = h_mgr.refcount
+    return ffi.gc(mgr, C.upipe_mgr_release)
+end
+
 return setmetatable({
     name = "upipe",
     sigs = sigs,
     mgr = alloc("upipe_mgr"),
     iterator = iterator
-}, mgr_mt)
+}, {
+    __index = mgr_mt.__index,
+    __call = function (_, cb)
+	return upipe_helper_alloc(cb)
+    end
+})
