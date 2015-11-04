@@ -6,3 +6,4 @@
 /upipe.defs
 /libffi-stdarg.so
 /libupipe-helper.so
+/.libupipe_*

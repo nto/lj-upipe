@@ -1,10 +1,12 @@
-PREFIX		= /usr
-CC		= $(CROSS)gcc
-CFLAGS		= -std=gnu11 -O2 -g
-INCLUDE_DIR	= $(PREFIX)/include
-LIB_DIR		= $(PREFIX)/lib
-CPPFLAGS	= -I$(INCLUDE_DIR)
-LUAJIT_DEST	= /usr/share/luajit-2.0.2
+PREFIX			= /usr
+LIBDIR			= $(PREFIX)/lib
+CC			= $(CROSS)gcc
+CFLAGS			= -std=gnu11 -O2 -g
+UPIPE_PREFIX		= $(PREFIX)
+UPIPE_INCLUDEDIR	= $(UPIPE_PREFIX)/include
+UPIPE_LIBDIR		= $(UPIPE_PREFIX)/lib
+CPPFLAGS		= -I$(UPIPE_INCLUDEDIR)
+LUAJIT_DEST		= /usr/share/luajit-2.0.2
 
 LIST = upipe \
        upipe-ts \
@@ -28,8 +30,8 @@ LUA_SRC = upipe.lua ffi-stdarg.lua $(CDEF_LUA) $(SIG_LUA) $(GETTERS_LUA) $(ARGS_
 all: $(SO) $(STATIC_SO) $(LUA_SRC)
 
 install: $(SO) $(STATIC_SO) $(LUA_SRC)
-	mkdir -p $(DESTDIR)$(LIB_DIR)
-	install $(SO) $(STATIC_SO) $(DESTDIR)$(LIB_DIR)
+	mkdir -p $(DESTDIR)$(LIBDIR)
+	install $(SO) $(STATIC_SO) $(DESTDIR)$(LIBDIR)
 	mkdir -p $(DESTDIR)$(LUAJIT_DEST)
 	install -m 644 $(LUA_SRC) $(DESTDIR)$(LUAJIT_DEST)
 
@@ -46,13 +48,13 @@ clean: $(LIST:%=clean-static-so-%)
 #-------------------------------------------------------------------------------
 
 define static-c
-$1.static.c: $(wildcard $(INCLUDE_DIR)/,$1/*.h)
+$1.static.c: $(wildcard $(UPIPE_INCLUDEDIR)/$1/*.h) $(UPIPE_INCLUDEDIR)/upipe/uref_attr.h
 	@echo gen $$@
 	@$(RM) -r build-$1/$1
 	@mkdir -p build-$1/$1
 	@mkdir -p build-$1/upipe
-	@cp "$(INCLUDE_DIR)/$1"/* build-$1/$1
-	@cp "$(INCLUDE_DIR)/upipe/uref_attr.h" build-$1/upipe
+	@cp "$(UPIPE_INCLUDEDIR)/$1"/*.h build-$1/$1
+	@cp "$(UPIPE_INCLUDEDIR)/upipe/uref_attr.h" build-$1/upipe
 	@sed -e 's/^static inline /              /' \
 	  -i build-$1/$1/*.h build-$1/upipe/uref_attr.h
 	@{ cd build-$1 && for i in $1/*; do \
@@ -100,7 +102,7 @@ prefix_framers = upipe_
 prefix_swscale = upipe_
 prefix_x264    = upipe_
 
-cdef/upipe-cdef.lua: libupipe.static.so libc.defs
+cdef/upipe-cdef.lua: libc.defs $(UPIPE_LIBDIR)/libupipe.so.0 libupipe.static.so
 	@echo gen $@
 	@gen-ffi-cdef \
 		--global \
@@ -112,13 +114,22 @@ cdef/upipe-cdef.lua: libupipe.static.so libc.defs
 		--enum uref_date_type \
 		--enum uprobe_event \
 		$(addprefix --prefix ,$(prefix_base)) \
-		$(LIB_DIR)/libupipe.so.0 \
+		$(UPIPE_LIBDIR)/libupipe.so.0 \
 		libupipe.static.so
 	@sed 's/struct __va_list_tag \*/va_list/' -i $@
 
 upipe.defs: cdef/upipe-cdef.lua
 
-cdef/upipe-modules-cdef.lua: libupipe-modules.static.so upipe.defs libc.defs
+define lib-dep
+  ifneq ($1,upipe)
+.libupipe_$1.so.0: $(UPIPE_LIBDIR)/libupipe_$(lib_$1).so.0
+	@touch $$@
+  endif
+endef
+
+$(foreach c,$(LIST),$(eval $(call lib-dep,$(c:upipe-%=%))))
+
+cdef/upipe-modules-cdef.lua: libc.defs upipe.defs .libupipe_modules.so.0 libupipe-modules.static.so
 	@echo gen $@
 	@gen-ffi-cdef \
 		--global \
@@ -127,11 +138,11 @@ cdef/upipe-modules-cdef.lua: libupipe-modules.static.so upipe.defs libc.defs
 		--read-defs upipe.defs \
 		--enum 'uprobe_*' \
 		$(addprefix --prefix ,$(prefix_modules)) \
-		$(LIB_DIR)/libupipe_$(lib_modules).so.0 \
+		$(UPIPE_LIBDIR)/libupipe_$(lib_modules).so.0 \
 		libupipe-modules.static.so
 	@sed 's/struct __va_list_tag \*/va_list/' -i $@
 
-cdef/upipe-%-cdef.lua: libupipe-%.static.so upipe.defs libc.defs
+cdef/upipe-%-cdef.lua: libc.defs upipe.defs .libupipe_%.so.0 libupipe-%.static.so
 	@echo gen $@
 	@gen-ffi-cdef \
 		--global \
@@ -140,7 +151,7 @@ cdef/upipe-%-cdef.lua: libupipe-%.static.so upipe.defs libc.defs
 		--read-defs upipe.defs \
 		--enum 'uprobe_$*_*' \
 		$(addprefix --prefix ,$(prefix_$*)) \
-		$(LIB_DIR)/libupipe_$(lib_$*).so.0 \
+		$(UPIPE_LIBDIR)/libupipe_$(lib_$*).so.0 \
 		libupipe-$*.static.so
 	@sed 's/struct __va_list_tag \*/va_list/' -i $@
 
@@ -148,11 +159,13 @@ cdef/upipe-%-cdef.lua: libupipe-%.static.so upipe.defs libc.defs
 # upipe-helper
 #-------------------------------------------------------------------------------
 
-build-upipe-helper/upipe/upipe_helper_upipe.h:
+UPIPE_HELPERS = $(wildcard $(UPIPE_INCLUDEDIR)/upipe/upipe_helper_*)
+
+build-upipe-helper/upipe/upipe_helper_upipe.h: $(UPIPE_HELPERS)
 	@echo gen $@
 	@$(RM) -r build-upipe-helper
 	@mkdir -p build-upipe-helper/upipe
-	@cp "$(INCLUDE_DIR)"/upipe/upipe_helper_* build-upipe-helper/upipe
+	@cp $(UPIPE_HELPERS) build-upipe-helper/upipe
 	@sed -e 's/^static /       /' -i build-upipe-helper/upipe/*.h
 
 libupipe-helper.so: CPPFLAGS := -Ibuild-upipe-helper $(CPPFLAGS)
