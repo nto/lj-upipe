@@ -65,7 +65,7 @@ local upipe_xor_mgr = upipe {
 	    if not ubase_check(flow_def:flow_match_def("block.")) then
 		return "invalid"
 	    end
-	    pipe:helper_store_flow_def(flow_def)
+	    pipe:helper_store_flow_def(flow_def:dup())
 	end
     }
 }

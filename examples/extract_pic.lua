@@ -41,7 +41,7 @@ end
 local null = upipe.null():new(pfx("null") .. probe)
 
 -- file source
-local source = upipe.fsrc():new(pfx("fsrc") .. probe)
+local source = upipe.fsrc():new(pfx("src") .. probe)
 if not ubase_check(source:set_uri(src_path)) then
     os.exit(1)
 end
@@ -50,7 +50,7 @@ local split_pipe
 
 -- other probes
 local uref_probe = uprobe {
-    probe_uref = function (probe, pipe, ref)
+    probe_uref = function (probe, pipe, ref, drop)
 	if source then
 	    -- release the source to exit
 	    source:release()
@@ -62,7 +62,7 @@ local uref_probe = uprobe {
 
 	else
 	    -- second (or after) frame, do not output them
-	    pipe.output = null
+	    drop[0] = true
 	end
     end
 }
@@ -100,7 +100,7 @@ local avcdec_probe = uprobe {
 	    uref_probe ..
 	    probe)
 
-	local fsink = upipe.fsink():new(pfx("jpeg sink") .. probe)
+	local fsink = upipe.fsink():new(pfx("sink") .. probe)
 	fsink:fsink_set_path(dst_path, "UPIPE_FSINK_OVERWRITE")
 
 	pipe.output = ffmt .. jpegenc .. urefprobe .. fsink

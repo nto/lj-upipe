@@ -90,7 +90,7 @@ local function alloc(ty)
     end
 end
 
-uprobe_alloc = alloc "uprobe"
+local uprobe_alloc = alloc "uprobe"
 upipe_alloc = alloc "upipe"
 uclock_alloc = alloc "uclock"
 
@@ -245,7 +245,7 @@ ffi.metatype("struct upipe_mgr", {
 local function iterator(pipe, f, t)
     local item_p = ffi.new(t .. "[1]")
     return function ()
-	assert(ubase_check(f(pipe, item_p)))
+	assert(C.ubase_check(f(pipe, item_p)))
 	return item_p[0] ~= nil and item_p[0] or nil
     end
 end
@@ -350,7 +350,8 @@ ffi.metatype("struct uclock", {
 })
 
 local function container_of(ptr, ct, member)
-    return ffi.cast(ct, ffi.cast("void *", ptr) - ffi.offsetof(ct, member))
+    if type(ct) == 'string' then ct = ffi.typeof(ct) end
+    return ffi.cast(ffi.typeof("$ *", ct), ffi.cast("char *", ptr) - ffi.offsetof(ct, member))
 end
 
 local ctrl_args = require "upipe-control-args"
@@ -362,13 +363,13 @@ end
 
 local function upipe_helper_alloc(cb)
     local ct = ffi.typeof("struct upipe_helper_mgr")
-    local h_mgr = ffi.cast(ffi.typeof("$ *", ct), malloc(ffi.sizeof(ct)))
+    local h_mgr = ffi.cast(ffi.typeof("$ *", ct), C.malloc(ffi.sizeof(ct)))
 
     local mgr = h_mgr.mgr
     mgr.upipe_alloc = cb.alloc or
 	function (mgr, probe, signature, args)
 	    local ct = ffi.typeof("struct upipe_helper")
-	    local h_pipe = ffi.cast(ffi.typeof("$ *", ct), malloc(ffi.sizeof(ct)))
+	    local h_pipe = ffi.cast(ffi.typeof("$ *", ct), C.malloc(ffi.sizeof(ct)))
 	    local pipe = ffi.gc(h_pipe.upipe, C.upipe_release)
 	    pipe:init(mgr, probe)
 	    pipe:helper_init_urefcount()
@@ -453,11 +454,21 @@ local function upipe_helper_alloc(cb)
 	pipe:helper_clean_flow_def()
 	pipe:helper_clean_upump()
 	pipe:clean()
-	C.free(h_pipe)
+	C.free(ffi.cast("void *", h_pipe))
     end
 
-    local refcount_cb = ffi.cast("urefcount_cb", function (refcount)
-	C.free(container_of(refcount, ct, "refcount"))
+    local refcount_cb
+    refcount_cb = ffi.cast("urefcount_cb", function (refcount)
+	local h_mgr = container_of(refcount, ct, "refcount")
+	local mgr = h_mgr.mgr
+	mgr.upipe_alloc:free()
+	mgr.upipe_control:free()
+	if mgr.upipe_input ~= nil then
+	    mgr.upipe_input:free()
+	end
+	h_mgr.refcount_cb:free()
+	refcount_cb:free()
+	C.free(ffi.cast("void *", h_mgr))
     end)
 
     h_mgr.refcount:init(refcount_cb)
