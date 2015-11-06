@@ -2,38 +2,33 @@ PREFIX			= /usr
 LIBDIR			= $(PREFIX)/lib
 CC			= $(CROSS)gcc
 CFLAGS			= -std=gnu11 -O2 -g
-UPIPE_PREFIX		= $(PREFIX)
-UPIPE_INCLUDEDIR	= $(UPIPE_PREFIX)/include
-UPIPE_LIBDIR		= $(UPIPE_PREFIX)/lib
 CPPFLAGS		= -I$(UPIPE_INCLUDEDIR)
 LUAJIT_DEST		= /usr/share/luajit-2.0.2
+PKG_CONFIG		= pkg-config
 
-LIST = upipe \
-       upipe-ts \
-       upipe-modules \
-       upipe-av \
-       upipe-filters \
-       upipe-framers \
-       upipe-swscale \
-       upipe-x264
+UPIPE_INCLUDEDIR := $(shell $(PKG_CONFIG) libupipe --variable=includedir)
+UPIPE_LIBDIR     := $(shell $(PKG_CONFIG) libupipe --variable=libdir)
 
-STATIC_SO = $(LIST:%=lib%.static.so)
-LIST_CDEF = $(LIST:%=cdef/%-cdef.lua) cdef/upipe-helper-cdef.lua
-SIG_LUA = $(LIST:%=%-sigs.lua)
-CDEF_LUA = $(LIST_CDEF) cdef/libev.lua cdef/upump-ev-cdef.lua
+LIST_C := $(shell $(PKG_CONFIG) --list-all | sed -n 's/^lib\(upipe\|upump\)_\(\S*\).*/\1-\2/p')
+LIST   := upipe $(LIST_C)
+
+STATIC_SO   = $(LIST:%=lib%.static.so)
+LIST_CDEF   = $(LIST_C:%=%.lua) libupipe.lua upipe-helper.lua
+SIG_LUA     = $(LIST:%=%-sigs.lua)
+CDEF_LUA    = $(LIST_CDEF) libev.lua
 GETTERS_LUA = upipe-getters.lua uref-getters.lua
-ARGS_LUA = uprobe-args.lua upipe-control-args.lua
-SO = libffi-stdarg.so libupipe-helper.so
+ARGS_LUA    = uprobe-args.lua upipe-control-args.lua
+SO          = libffi-stdarg.so libupipe-helper.so
 
-LUA_SRC = upipe.lua ffi-stdarg.lua $(CDEF_LUA) $(SIG_LUA) $(GETTERS_LUA) $(ARGS_LUA)
+SRC_LUA = upipe.lua ffi-stdarg.lua $(CDEF_LUA) $(SIG_LUA) $(GETTERS_LUA) $(ARGS_LUA)
 
-all: $(SO) $(STATIC_SO) $(LUA_SRC)
+all: $(SO) $(STATIC_SO) $(SRC_LUA)
 
-install: $(SO) $(STATIC_SO) $(LUA_SRC)
+install: $(SO) $(STATIC_SO) $(SRC_LUA)
 	mkdir -p $(DESTDIR)$(LIBDIR)
 	install $(SO) $(STATIC_SO) $(DESTDIR)$(LIBDIR)
 	mkdir -p $(DESTDIR)$(LUAJIT_DEST)
-	install -m 644 $(LUA_SRC) $(DESTDIR)$(LUAJIT_DEST)
+	install -m 644 $(SRC_LUA) $(DESTDIR)$(LUAJIT_DEST)
 
 clean: $(LIST:%=clean-static-so-%)
 	$(RM) $(SIG_LUA)
@@ -81,28 +76,19 @@ clean-static-so-%:
 # cdef
 #-------------------------------------------------------------------------------
 
-lib_ts      = ts
-lib_modules = modules
-lib_av      = av
-lib_filters = filters
-lib_framers = framers
-lib_swscale = sws
-lib_x264    = x264
-
 prefix_base    = upipe_ uprobe_ ubuf_ uref_ uchain_ upump_ ustring_ udict_  \
 		 uclock_ umem_ uuri_ uqueue_ urequest_ ufifo_ ucookie_ \
 		 urefcount_ ueventfd_ uring_ ubase_ urational_ uatomic_ \
 		 ulifo_ upool_ ulist_ udeal_ ulog_
 
-prefix_ts      = upipe_ts_ uref_ts_
-prefix_modules = upipe_ uprobe_
-prefix_av      = upipe_av uref_avcenc_
-prefix_filters = upipe_
-prefix_framers = upipe_
-prefix_swscale = upipe_
-prefix_x264    = upipe_
+prefix_modules    = upipe_ uprobe_
+prefix_ts         = upipe_ts_ uref_ts_
+prefix_av         = upipe_av uref_avcenc_
 
-cdef/upipe-cdef.lua: libc.defs $(UPIPE_LIBDIR)/libupipe.so.0 libupipe.static.so
+libupipe = $(UPIPE_LIBDIR)/libupipe
+libupump = $(UPIPE_LIBDIR)/libupump
+
+libupipe.lua: libc.defs $(libupipe).so.0 libupipe.static.so
 	@echo gen $@
 	@gen-ffi-cdef \
 		--global \
@@ -114,22 +100,13 @@ cdef/upipe-cdef.lua: libc.defs $(UPIPE_LIBDIR)/libupipe.so.0 libupipe.static.so
 		--enum uref_date_type \
 		--enum uprobe_event \
 		$(addprefix --prefix ,$(prefix_base)) \
-		$(UPIPE_LIBDIR)/libupipe.so.0 \
+		$(libupipe).so.0 \
 		libupipe.static.so
 	@sed 's/struct __va_list_tag \*/va_list/' -i $@
 
-upipe.defs: cdef/upipe-cdef.lua
+upipe.defs: libupipe.lua
 
-define lib-dep
-  ifneq ($1,upipe)
-.libupipe_$1.so.0: $(UPIPE_LIBDIR)/libupipe_$(lib_$1).so.0
-	@touch $$@
-  endif
-endef
-
-$(foreach c,$(LIST),$(eval $(call lib-dep,$(c:upipe-%=%))))
-
-cdef/upipe-modules-cdef.lua: libc.defs upipe.defs .libupipe_modules.so.0 libupipe-modules.static.so
+upipe-modules.lua: libc.defs upipe.defs $(libupipe)_modules.so.0 libupipe-modules.static.so
 	@echo gen $@
 	@gen-ffi-cdef \
 		--global \
@@ -138,11 +115,11 @@ cdef/upipe-modules-cdef.lua: libc.defs upipe.defs .libupipe_modules.so.0 libupip
 		--read-defs upipe.defs \
 		--enum 'uprobe_*' \
 		$(addprefix --prefix ,$(prefix_modules)) \
-		$(UPIPE_LIBDIR)/libupipe_$(lib_modules).so.0 \
+		$(libupipe)_modules.so.0 \
 		libupipe-modules.static.so
 	@sed 's/struct __va_list_tag \*/va_list/' -i $@
 
-cdef/upipe-%-cdef.lua: libc.defs upipe.defs .libupipe_%.so.0 libupipe-%.static.so
+upipe-%.lua: libc.defs upipe.defs $(libupipe)_%.so.0 libupipe-%.static.so
 	@echo gen $@
 	@gen-ffi-cdef \
 		--global \
@@ -150,9 +127,21 @@ cdef/upipe-%-cdef.lua: libc.defs upipe.defs .libupipe_%.so.0 libupipe-%.static.s
 		--read-defs libc.defs \
 		--read-defs upipe.defs \
 		--enum 'uprobe_$*_*' \
-		$(addprefix --prefix ,$(prefix_$*)) \
-		$(UPIPE_LIBDIR)/libupipe_$(lib_$*).so.0 \
+		$(addprefix --prefix ,$(or $(prefix_$*),upipe_)) \
+		$(libupipe)_$*.so.0 \
 		libupipe-$*.static.so
+	@sed 's/struct __va_list_tag \*/va_list/' -i $@
+
+upump-%.lua: libc.defs upipe.defs $(libupump)_%.so.0 libupump-%.static.so
+	@echo gen $@
+	@gen-ffi-cdef \
+		--global \
+		--output $@ \
+		--read-defs libc.defs \
+		--read-defs upipe.defs \
+		--prefix upump_$*_ \
+		$(libupump)_$*.so.0 \
+		libupump-$*.static.so
 	@sed 's/struct __va_list_tag \*/va_list/' -i $@
 
 #-------------------------------------------------------------------------------
@@ -171,7 +160,7 @@ build-upipe-helper/upipe/upipe_helper_upipe.h: $(UPIPE_HELPERS)
 libupipe-helper.so: CPPFLAGS := -Ibuild-upipe-helper $(CPPFLAGS)
 libupipe-helper.so: build-upipe-helper/upipe/upipe_helper_upipe.h
 
-cdef/upipe-helper-cdef.lua: libupipe-helper.so upipe.defs libc.defs
+upipe-helper.lua: libupipe-helper.so upipe.defs libc.defs
 	@echo gen $@
 	@gen-ffi-cdef \
 		--global \

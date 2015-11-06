@@ -4,6 +4,11 @@ local ev = require "libev"
 local ffi = require "ffi"
 local upipe = require "upipe"
 
+require "upump-ev"
+require "upipe-modules"
+require "upipe-ts"
+require "upipe-framers"
+
 ffi.cdef [[ FILE *stderr; ]]
 
 local UPROBE_LOG_LEVEL = UPROBE_LOG_NOTICE

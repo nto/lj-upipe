@@ -2,7 +2,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
 #define va(Type) \
 	else if (!strcmp(type, #Type)) \
@@ -17,6 +16,5 @@ intptr_t ffi_va_arg(va_list *ap, const char *type)
 	va(signed int);
 	va(uint32_t);
 	va(uint64_t);
-	va(bool);
 	else abort();
 }

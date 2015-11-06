@@ -1,9 +1,8 @@
 /*.static.c
-/*-sigs.lua
 /*.static.so
+/*-sigs.lua
 /*-getters.lua
 /build-*/
 /upipe.defs
 /libffi-stdarg.so
 /libupipe-helper.so
-/.libupipe_*

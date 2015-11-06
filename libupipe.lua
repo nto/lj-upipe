@@ -192,8 +192,8 @@ void ubuf_pic_common_mgr_init(struct ubuf_mgr *, uint8_t);
 int ubuf_pic_common_mgr_add_plane(struct ubuf_mgr *, char const *, uint8_t, uint8_t, uint8_t);
 int ubuf_pic_plane_clear(struct ubuf *, char const *, int, int, int, int, int);
 int ubuf_pic_clear(struct ubuf *, int, int, int, int, int);
-int ubuf_pic_mem_mgr_add_plane(struct ubuf_mgr *, char const *, uint8_t, uint8_t, uint8_t);
 struct ubuf_mgr *ubuf_pic_mem_mgr_alloc(uint16_t, uint16_t, struct umem_mgr *, uint8_t, int, int, int, int, int, int);
+int ubuf_pic_mem_mgr_add_plane(struct ubuf_mgr *, char const *, uint8_t, uint8_t, uint8_t);
 struct ubuf_mgr *ubuf_pic_mem_mgr_alloc_fourcc(uint16_t, uint16_t, struct umem_mgr *, char const *, int, int, int, int, int, int);
 int ubuf_sound_common_dup(struct ubuf *, struct ubuf *);
 int ubuf_sound_common_plane_dup(struct ubuf *, struct ubuf *, uint8_t);
@@ -305,8 +305,6 @@ struct uprobe_output {
 struct uprobe *uprobe_output_init(struct uprobe_output *, struct uprobe *);
 void uprobe_output_clean(struct uprobe_output *);
 struct uprobe *uprobe_output_alloc(struct uprobe *);
-int uprobe_selflow_set(struct uprobe *, char const *);
-void uprobe_selflow_get(struct uprobe *, char const **);
 enum uprobe_selflow_type {
 	UPROBE_SELFLOW_VOID,
 	UPROBE_SELFLOW_PIC,
@@ -314,6 +312,8 @@ enum uprobe_selflow_type {
 	UPROBE_SELFLOW_SUBPIC,
 };
 struct uprobe *uprobe_selflow_alloc(struct uprobe *, struct uprobe *, enum uprobe_selflow_type, char const *);
+void uprobe_selflow_get(struct uprobe *, char const **);
+int uprobe_selflow_set(struct uprobe *, char const *);
 int uprobe_selflow_set_va(struct uprobe *, char const *, ...);
 struct uprobe_stdio {
 	FILE *stream;
@@ -422,13 +422,13 @@ struct uprobe *uprobe_uref_mgr_init(struct uprobe_uref_mgr *, struct uprobe *, s
 void uprobe_uref_mgr_clean(struct uprobe_uref_mgr *);
 struct uprobe *uprobe_uref_mgr_alloc(struct uprobe *, struct uref_mgr *);
 void uprobe_uref_mgr_set(struct uprobe *, struct uref_mgr *);
-void upump_common_start(struct upump *);
-void upump_common_stop(struct upump *);
-void upump_common_blocker_free_inner(struct upool *, void *);
-void upump_common_blocker_free(struct upump_blocker *);
 struct upump_blocker *upump_common_blocker_alloc(struct upump *);
+void upump_common_blocker_free(struct upump_blocker *);
+void upump_common_blocker_free_inner(struct upool *, void *);
 void upump_common_init(struct upump *);
 void upump_common_dispatch(struct upump *);
+void upump_common_start(struct upump *);
+void upump_common_stop(struct upump *);
 void upump_common_clean(struct upump *);
 size_t upump_common_mgr_sizeof(uint16_t, uint16_t);
 void upump_common_mgr_vacuum(struct upump_mgr *);

@@ -16,16 +16,8 @@ ffi.cdef [[
     typedef long time_t;
 ]]
 
-require "upipe-cdef"
-require "upipe-modules-cdef"
-require "upipe-framers-cdef"
-require "upipe-ts-cdef"
-require "upipe-av-cdef"
-require "upipe-filters-cdef"
-require "upipe-swscale-cdef"
-require "upipe-x264-cdef"
-require "upump-ev-cdef"
-require "upipe-helper-cdef"
+require "libupipe"
+require "upipe-helper"
 
 UCLOCK_FREQ = 27000000
 
@@ -64,7 +56,9 @@ local function alloc(ty)
 	    if props[k] and props[k].clean then props[k].clean(data) end
 	    props[k] = nil
 	end
-	if ty ~= "upipe_mgr" then C[ty .. "_clean"](data) end
+	if ty ~= "upipe_mgr" and ty ~= "uclock" then
+	    C[ty .. "_clean"](data)
+	end
 	if cbref[tostring(refcount)] then
 	    cbref[tostring(refcount)]:free()
 	    cbref[tostring(refcount)] = nil
